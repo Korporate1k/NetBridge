@@ -1,0 +1,389 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0858b1d6d35c56fbe2cfb1fa /* LocalProxyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5202167d0f78c85c48299801 /* LocalProxyApp.swift */; };
+		5701121baace7fce081ab140 /* ProxyStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = f3e863de76a46020e8c6106c /* ProxyStats.swift */; };
+		e113ccb22d71f86f489cf84d /* ProxyServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = b479143169eda996b7fccb52 /* ProxyServer.swift */; };
+		7f2151c7b91ee847ec494f52 /* ConnectProxyHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */; };
+		064cc426265a9a05362f9eed /* LocalAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */; };
+		48ca5c4361c3801402829212 /* ListenerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ede2543625401bca2c21a56 /* ListenerConfig.swift */; };
+		0ff1845e74c35320445d4156 /* RateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = ef094df573c270e7eafe0ea3 /* RateLimiter.swift */; };
+		be44418b3c258b74904c499f /* DoHResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5aa9448cd4b58946811b227b /* DoHResolver.swift */; };
+		1619ffee84fdaf0607382f81 /* ConnectionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10ef213f43edb0621a178211 /* ConnectionHistory.swift */; };
+		728a74151e753ecf2c3a3e8e /* ProxyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */; };
+		cd9e2ff2dc1c73ab7f72afff /* QRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = c6c1e91ad834516dcf4d5e1a /* QRCodeView.swift */; };
+		051885aa70f5e3fe1a2be33f /* UsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98c0d600fbb5630bdb79fcd1 /* UsageHistory.swift */; };
+		261dd7d9ddd9a90532f9cb5c /* UsageGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581490cab8742fede3884875 /* UsageGraphView.swift */; };
+		ecbe162e7fa165b9274d661a /* ProfilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74e950c054cd99ee827e2da5 /* ProfilesView.swift */; };
+		94f6b92f6e366d321dcc7685 /* GlassEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = e6071b257c4b36557492a0ed /* GlassEffects.swift */; };
+		b4f144adbe2bef210d347d26 /* HowToGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = d3c39ed0d8bb7df1945e99ef /* HowToGuideView.swift */; };
+		8305f1ac558b154ce4951db2 /* BackgroundKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */; };
+		3bf1c40fccbb98e8cc73e248 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = fc4be6bdf63de7139b3896a2 /* DashboardView.swift */; };
+		6fd6454414e647ddbd878e12 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29cdcb3205e1386d5b8762bc /* DebugLog.swift */; };
+		0567b5c29dbf38c4b16ebfba /* NetworkDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */; };
+		0c4342f11f794b1780de135f /* Frontend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0442604cc7374884814f9d32 /* Frontend.swift */; };
+		1fcaed112c934a01b391e21c /* OutboundTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = cc2e805db3ec4f6ca9f36e83 /* OutboundTransport.swift */; };
+		7e885ac28e6b4ae090e1b123 /* Socks5Handler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80cab1e68bad46239046ced0 /* Socks5Handler.swift */; };
+		24b21058f16f453c93838d77 /* UDPRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0d01ab072bfd4692948ba02f /* UDPRelay.swift */; };
+		babbc7a4d1134285beed4b21 /* DeviceRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */; };
+		4a13f7ac3aad4e5c9ebd97ea /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ff38e5adae6472db26554c2 /* DevicesView.swift */; };
+		fb0bda5fac7d207e670afeb5 /* Socks5ClientTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = d77765b08fa5936da37239af /* Socks5ClientTestView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		e6c38930840264262e54f221 /* LocalProxy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalProxy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5202167d0f78c85c48299801 /* LocalProxyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProxyApp.swift; sourceTree = "<group>"; };
+		f3e863de76a46020e8c6106c /* ProxyStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyStats.swift; sourceTree = "<group>"; };
+		b479143169eda996b7fccb52 /* ProxyServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyServer.swift; sourceTree = "<group>"; };
+		446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectProxyHandler.swift; sourceTree = "<group>"; };
+		ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAddress.swift; sourceTree = "<group>"; };
+		5ede2543625401bca2c21a56 /* ListenerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenerConfig.swift; sourceTree = "<group>"; };
+		ef094df573c270e7eafe0ea3 /* RateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateLimiter.swift; sourceTree = "<group>"; };
+		5aa9448cd4b58946811b227b /* DoHResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoHResolver.swift; sourceTree = "<group>"; };
+		10ef213f43edb0621a178211 /* ConnectionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionHistory.swift; sourceTree = "<group>"; };
+		e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyProfile.swift; sourceTree = "<group>"; };
+		c6c1e91ad834516dcf4d5e1a /* QRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeView.swift; sourceTree = "<group>"; };
+		98c0d600fbb5630bdb79fcd1 /* UsageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHistory.swift; sourceTree = "<group>"; };
+		581490cab8742fede3884875 /* UsageGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageGraphView.swift; sourceTree = "<group>"; };
+		74e950c054cd99ee827e2da5 /* ProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesView.swift; sourceTree = "<group>"; };
+		e6071b257c4b36557492a0ed /* GlassEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassEffects.swift; sourceTree = "<group>"; };
+		d3c39ed0d8bb7df1945e99ef /* HowToGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HowToGuideView.swift; sourceTree = "<group>"; };
+		5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeeper.swift; sourceTree = "<group>"; };
+		fc4be6bdf63de7139b3896a2 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		29cdcb3205e1386d5b8762bc /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
+		e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkDiagnostics.swift; sourceTree = "<group>"; };
+		530763cba24ada874f01101a /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0442604cc7374884814f9d32 /* Frontend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Frontend.swift; sourceTree = "<group>"; };
+		cc2e805db3ec4f6ca9f36e83 /* OutboundTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundTransport.swift; sourceTree = "<group>"; };
+		80cab1e68bad46239046ced0 /* Socks5Handler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5Handler.swift; sourceTree = "<group>"; };
+		0d01ab072bfd4692948ba02f /* UDPRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UDPRelay.swift; sourceTree = "<group>"; };
+		0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRegistry.swift; sourceTree = "<group>"; };
+		9ff38e5adae6472db26554c2 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
+		d77765b08fa5936da37239af /* Socks5ClientTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5ClientTestView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5837a8eb41896b3c7c553358 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		e62a025eb0a40c44b897744c = {
+			isa = PBXGroup;
+			children = (
+				8b290e3d2cab120742f9d3d3 /* LocalProxy */,
+				560826c8c38ad18ce880f553 /* Frameworks */,
+				4a9df4e56bdb65a514810df1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4a9df4e56bdb65a514810df1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				e6c38930840264262e54f221 /* LocalProxy.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8b290e3d2cab120742f9d3d3 /* LocalProxy */ = {
+			isa = PBXGroup;
+			children = (
+				5202167d0f78c85c48299801 /* LocalProxyApp.swift */,
+				f3e863de76a46020e8c6106c /* ProxyStats.swift */,
+				b479143169eda996b7fccb52 /* ProxyServer.swift */,
+				446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */,
+				ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */,
+				5ede2543625401bca2c21a56 /* ListenerConfig.swift */,
+				ef094df573c270e7eafe0ea3 /* RateLimiter.swift */,
+				5aa9448cd4b58946811b227b /* DoHResolver.swift */,
+				10ef213f43edb0621a178211 /* ConnectionHistory.swift */,
+				e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */,
+				c6c1e91ad834516dcf4d5e1a /* QRCodeView.swift */,
+				98c0d600fbb5630bdb79fcd1 /* UsageHistory.swift */,
+				581490cab8742fede3884875 /* UsageGraphView.swift */,
+				74e950c054cd99ee827e2da5 /* ProfilesView.swift */,
+				e6071b257c4b36557492a0ed /* GlassEffects.swift */,
+				d3c39ed0d8bb7df1945e99ef /* HowToGuideView.swift */,
+				5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */,
+				fc4be6bdf63de7139b3896a2 /* DashboardView.swift */,
+				29cdcb3205e1386d5b8762bc /* DebugLog.swift */,
+				e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */,
+				0442604cc7374884814f9d32 /* Frontend.swift */,
+				cc2e805db3ec4f6ca9f36e83 /* OutboundTransport.swift */,
+				80cab1e68bad46239046ced0 /* Socks5Handler.swift */,
+				0d01ab072bfd4692948ba02f /* UDPRelay.swift */,
+				0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */,
+				9ff38e5adae6472db26554c2 /* DevicesView.swift */,
+				d77765b08fa5936da37239af /* Socks5ClientTestView.swift */,
+				530763cba24ada874f01101a /* Info.plist */,
+			);
+			path = LocalProxy;
+			sourceTree = "<group>";
+		};
+		560826c8c38ad18ce880f553 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		423ae86f8921918da41f3675 /* LocalProxy */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2e7910abb91582fd27f74415 /* Build configuration list for PBXNativeTarget "LocalProxy" */;
+			buildPhases = (
+				eb83ce0627b205f1751faadf /* Sources */,
+				5837a8eb41896b3c7c553358 /* Frameworks */,
+				8ae0693bb0213a4fe6818987 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LocalProxy;
+			packageProductDependencies = (
+				f48ffd1b186d4eb7898c34bc /* Socks5Client */,
+			);
+			productName = LocalProxy;
+			productReference = e6c38930840264262e54f221 /* LocalProxy.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		a466b6ff50f6735f3503533a /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					423ae86f8921918da41f3675 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 8ccf29ec6f9f870bb48d1191 /* Build configuration list for PBXProject "LocalProxy" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = e62a025eb0a40c44b897744c;
+			packageReferences = (
+				5502300d685165c733b46e0f /* XCLocalSwiftPackageReference "Socks5Client" */,
+			);
+			productRefGroup = 4a9df4e56bdb65a514810df1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				423ae86f8921918da41f3675 /* LocalProxy */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8ae0693bb0213a4fe6818987 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		eb83ce0627b205f1751faadf /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0858b1d6d35c56fbe2cfb1fa /* LocalProxyApp.swift in Sources */,
+				5701121baace7fce081ab140 /* ProxyStats.swift in Sources */,
+				e113ccb22d71f86f489cf84d /* ProxyServer.swift in Sources */,
+				7f2151c7b91ee847ec494f52 /* ConnectProxyHandler.swift in Sources */,
+				064cc426265a9a05362f9eed /* LocalAddress.swift in Sources */,
+				48ca5c4361c3801402829212 /* ListenerConfig.swift in Sources */,
+				0ff1845e74c35320445d4156 /* RateLimiter.swift in Sources */,
+				be44418b3c258b74904c499f /* DoHResolver.swift in Sources */,
+				1619ffee84fdaf0607382f81 /* ConnectionHistory.swift in Sources */,
+				728a74151e753ecf2c3a3e8e /* ProxyProfile.swift in Sources */,
+				cd9e2ff2dc1c73ab7f72afff /* QRCodeView.swift in Sources */,
+				051885aa70f5e3fe1a2be33f /* UsageHistory.swift in Sources */,
+				261dd7d9ddd9a90532f9cb5c /* UsageGraphView.swift in Sources */,
+				ecbe162e7fa165b9274d661a /* ProfilesView.swift in Sources */,
+				94f6b92f6e366d321dcc7685 /* GlassEffects.swift in Sources */,
+				b4f144adbe2bef210d347d26 /* HowToGuideView.swift in Sources */,
+				8305f1ac558b154ce4951db2 /* BackgroundKeeper.swift in Sources */,
+				3bf1c40fccbb98e8cc73e248 /* DashboardView.swift in Sources */,
+				6fd6454414e647ddbd878e12 /* DebugLog.swift in Sources */,
+				0567b5c29dbf38c4b16ebfba /* NetworkDiagnostics.swift in Sources */,
+				0c4342f11f794b1780de135f /* Frontend.swift in Sources */,
+				1fcaed112c934a01b391e21c /* OutboundTransport.swift in Sources */,
+				7e885ac28e6b4ae090e1b123 /* Socks5Handler.swift in Sources */,
+				24b21058f16f453c93838d77 /* UDPRelay.swift in Sources */,
+				babbc7a4d1134285beed4b21 /* DeviceRegistry.swift in Sources */,
+				4a13f7ac3aad4e5c9ebd97ea /* DevicesView.swift in Sources */,
+				fb0bda5fac7d207e670afeb5 /* Socks5ClientTestView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		a71bc2a9b270964d4bc5b397 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		3274c3c4075c153fe32ca689 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		0924b5b55ede602e60d1083c /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocalProxy/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "LocalProxy uses your location in the background to keep the proxy running while the app is not on screen.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "LocalProxy uses your location to keep the proxy running.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LocalProxy listens on the local network so other devices can connect to it.";
+				INFOPLIST_KEY_UIBackgroundModes = "location";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LocalProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		f445b27ebaef3e3ed604d19e /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocalProxy/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "LocalProxy uses your location in the background to keep the proxy running while the app is not on screen.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "LocalProxy uses your location to keep the proxy running.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LocalProxy listens on the local network so other devices can connect to it.";
+				INFOPLIST_KEY_UIBackgroundModes = "location";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LocalProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		8ccf29ec6f9f870bb48d1191 /* Build configuration list for PBXProject "LocalProxy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				a71bc2a9b270964d4bc5b397 /* Debug */,
+				3274c3c4075c153fe32ca689 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2e7910abb91582fd27f74415 /* Build configuration list for PBXNativeTarget "LocalProxy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0924b5b55ede602e60d1083c /* Debug */,
+				f445b27ebaef3e3ed604d19e /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		5502300d685165c733b46e0f /* XCLocalSwiftPackageReference "Socks5Client" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Socks5Client;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		f48ffd1b186d4eb7898c34bc /* Socks5Client */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Socks5Client;
+		};
+/* End XCSwiftPackageProductDependency section */
+
+	};
+	rootObject = a466b6ff50f6735f3503533a /* Project object */;
+}
