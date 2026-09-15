@@ -34,6 +34,7 @@
 		babbc7a4d1134285beed4b21 /* DeviceRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */; };
 		4a13f7ac3aad4e5c9ebd97ea /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ff38e5adae6472db26554c2 /* DevicesView.swift */; };
 		fb0bda5fac7d207e670afeb5 /* Socks5ClientTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = d77765b08fa5936da37239af /* Socks5ClientTestView.swift */; };
+		09b3cc8d86b757950011fa4e /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 78abd84349cbb2a960979df6 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -66,6 +67,7 @@
 		0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRegistry.swift; sourceTree = "<group>"; };
 		9ff38e5adae6472db26554c2 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
 		d77765b08fa5936da37239af /* Socks5ClientTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5ClientTestView.swift; sourceTree = "<group>"; };
+		78abd84349cbb2a960979df6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +129,7 @@
 				9ff38e5adae6472db26554c2 /* DevicesView.swift */,
 				d77765b08fa5936da37239af /* Socks5ClientTestView.swift */,
 				530763cba24ada874f01101a /* Info.plist */,
+				78abd84349cbb2a960979df6 /* Assets.xcassets */,
 			);
 			path = LocalProxy;
 			sourceTree = "<group>";
@@ -202,6 +205,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				09b3cc8d86b757950011fa4e /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -296,6 +300,7 @@
 		0924b5b55ede602e60d1083c /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -323,6 +328,7 @@
 		f445b27ebaef3e3ed604d19e /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
