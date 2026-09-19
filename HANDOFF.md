@@ -1858,3 +1858,10 @@ lost:** the full pre-revert tree (all Shadowsocks work, QA-pass fixes, docs) is 
 - New files have entries in `project.pbxproj`; names containing `+` must be quoted there.
 
 Unsigned IPA rebuilt after this change: version 1.0 (20260919.135009) at build/Build/Products/Release-iphoneos/LocalProxy.ipa.
+
+## 2026-09-19 — Open item resolved: VPN survival across a real app kill
+
+The earlier QA pass left "does the client VPN survive a real app kill (swipe-away / jetsam)?" as the highest-priority open item
+(every `devicectl --terminate-existing` relaunch had killed the tunnel extension, including on plain SOCKS5). **Answer, reported by the
+project owner: yes, it survives a real app kill.** This is the owner's observation on a real device; it was not re-tested in this
+session, and the `devicectl --terminate-existing` result is therefore best read as an artifact of developer-launched processes.
