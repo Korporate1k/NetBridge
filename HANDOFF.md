@@ -1865,3 +1865,22 @@ The earlier QA pass left "does the client VPN survive a real app kill (swipe-awa
 (every `devicectl --terminate-existing` relaunch had killed the tunnel extension, including on plain SOCKS5). **Answer, reported by the
 project owner: yes, it survives a real app kill.** This is the owner's observation on a real device; it was not re-tested in this
 session, and the `devicectl --terminate-existing` result is therefore best read as an artifact of developer-launched processes.
+
+## 2026-09-19 — BRANCH `test/udp-fullcone-relay` (worktree `~/Desktop/LocalProxy-udp-test`): full-cone UDP relay — TESTING, not on main
+
+Answers the known limit "replies from any address other than the one sent to are never delivered". `UDPRelay`'s destination side no longer uses one
+connected `NWConnection` per destination; it uses ONE unconnected non-blocking BSD UDP socket per address family (`EgressSocket`: `sendto`/`recvfrom`
++ a `DispatchSourceRead`, `IP_TTL`/`IPV6_UNICAST_HOPS` = `EgressTTL.hopLimit`, 1 MB buffers). Client side (NWListener/NWConnection), heartbeat and
+teardown are unchanged; `UDPRelay`'s public interface (`init`, `start`, `cancel`) is unchanged.
+- Behaviour change: one stable external `ip:port` for all destinations (endpoint-independent mapping); inbound datagrams from ANY source are relayed
+  back with the real source in the SOCKS5 header; hostnames (ATYP 3) are resolved with `getaddrinfo` off-queue (IPv4 preferred, 60 s cache, ≤32
+  datagrams buffered per in-flight lookup) and the reply header names the resolved IP, not the name.
+- Dropped: per-destination `NWConnection` establishment/transfer-report logging (diagnostics only). Added `sendDrops` to the heartbeat/close lines.
+- Security trade-off: anyone who learns the egress port can inject datagrams to the client while the association lives (ephemeral port, dies with the
+  SOCKS5 control connection).
+- **Verification (simulator, live proxy, `scripts/udp_qa.py`):** 23/23 pass on this branch. Control run of the same script against the old design (main +
+  header fix): 19/23 — it fails exactly the new full-cone checks (shared external port, reply from a different source port, unsolicited inbound) plus
+  the hostname-header expectation. 60 open/close association cycles: 60/60 round-trips, process UDP fds back to 0 (no leak). Bulk: 3000×1200 B twice,
+  3000/3000 both times, relay counters `up=3600000B/3000 down=3600000B/3000 sendDrops=0`.
+- NOT verified: on a device; tun2proxy consuming the new headers/behaviour; behaviour under cellular/hotspot interface changes; sustained-throughput
+  comparison against the old design (the bulk test is client-paced); IPv6 to the public internet (only ::1 loopback tested).
