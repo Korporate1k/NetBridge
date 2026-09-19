@@ -1,34 +1,28 @@
 import Foundation
 import Network
+import Darwin
 
 /// One SOCKS5 `UDP ASSOCIATE` session: an ephemeral UDP listener receives
 /// wrapped datagrams from the SOCKS5 client, relays each one's payload to
-/// whatever destination it names (one `NWConnection(.udp)` per distinct
-/// destination), and wraps replies the same way on the way back. Owned by the
-/// `Tunnel` whose SOCKS5 request created it — its lifetime is tied to that
-/// tunnel's TCP control connection per RFC 1928, so `Tunnel.cleanup()`
-/// cancels it directly rather than `ProxyServer` tracking it separately.
+/// whatever destination it names, and wraps replies the same way on the way
+/// back. Owned by the `Tunnel` whose SOCKS5 request created it — its lifetime
+/// is tied to that tunnel's TCP control connection per RFC 1928, so
+/// `Tunnel.cleanup()` cancels it directly rather than `ProxyServer` tracking it
+/// separately.
 ///
-/// Throughput audit notes (no `NWParameters`/`NWProtocolUDP.Options` tuning
-/// applied — none were found with a clear, protocol-agnostic benefit):
-/// - `receiveMessage(completion:)` (used below, no size arguments) already
-///   delivers one complete datagram regardless of size — unlike the TCP
-///   relay's byte-stream `receive(minimumIncompleteLength:maximumLength:)`,
-///   there is no smaller default to raise here, and no `maximumLength`
-///   overload exists for message-based receives to begin with.
-/// - `NWParameters.udp`'s default `serviceClass` (`.bestEffort`) is kept
-///   deliberately: this relay carries arbitrary, unidentified UDP payloads
-///   (DNS, voice, game traffic, ...), so biasing toward a latency-oriented
-///   class like `.responsiveData` would be a QoS tradeoff for some traffic
-///   at the expense of others, not a universal speed win.
-///   `multipathServiceType` and TCP Fast Open have no UDP equivalent, so
-///   neither applies here.
-/// - One `NWConnection` per distinct destination (already the design below)
-///   is the correct model for outbound UDP under Network.framework — it has
-///   no connectionless "send to arbitrary address" API — and `.start()`
-///   already doesn't block the first `send()` (Network.framework queues it
-///   until ready), so there is no first-packet latency being left on the
-///   table.
+/// Destination side (full-cone NAT behaviour): all outbound traffic leaves
+/// through ONE unconnected BSD UDP socket per address family (`EgressSocket`),
+/// so the association has a single, stable external `ip:port` regardless of how
+/// many destinations the client talks to, and datagrams that arrive on it from
+/// ANY remote address are relayed back to the client, each tagged with its real
+/// source (RFC 1928 §7). That is what DNS servers that answer from a different
+/// IP, STUN and peer-to-peer hole punching need. The previous design used one
+/// connected `NWConnection` per destination, which the OS filters to that exact
+/// remote `ip:port` and which gives every destination a different external port.
+///
+/// Trade-off: anyone who learns the egress port can send datagrams to the
+/// client for as long as the association lives. The port is ephemeral and dies
+/// with the SOCKS5 control connection.
 final class UDPRelay {
     let id: Int
     private let queue: DispatchQueue
@@ -36,20 +30,31 @@ final class UDPRelay {
 
     private var listener: NWListener?
     private var clientConnection: NWConnection?
-    private var destinations: [String: NWConnection] = [:]
     private var cancelled = false
     private var didOpenStats = false
 
-    /// Per-`NWConnection` outbound send queues (keyed the same as
-    /// `destinations`, plus a fixed key for the single client connection).
-    /// Necessary because firing multiple `NWConnection.send()` calls back to
-    /// back on the same UDP connection, before earlier ones complete, does
+    // MARK: Destination side
+
+    private var egress4: EgressSocket?
+    private var egress6: EgressSocket?
+    private var destinationsSeen: Set<String> = []
+
+    /// Hostname destinations (ATYP 3) are resolved off-queue with
+    /// `getaddrinfo`; datagrams that arrive while a lookup is in flight wait in
+    /// `pendingResolution` (capped) and results are cached briefly.
+    private var resolved: [String: (address: sockaddr_storage, expires: DispatchTime)] = [:]
+    private var pendingResolution: [String: [(payload: Data, port: UInt16)]] = [:]
+    private static let resolutionTTLSeconds = 60.0
+    private static let maxPendingPerName = 32
+
+    /// Per-`NWConnection` outbound send queue for the CLIENT connection (fixed
+    /// key). Necessary because firing multiple `NWConnection.send()` calls back
+    /// to back on the same UDP connection, before earlier ones complete, does
     /// not queue reliably — measured directly: a rapid burst of datagrams to
-    /// the same destination delivered only 1 of 8 replies, consistently,
-    /// regardless of read-side backpressure (already tried and correctly
-    /// ruled out — see `receiveFromClient`'s doc comment). Serializing sends
-    /// per connection (never gating reads on it) fixed it. Each destination
-    /// gets its own queue so unrelated destinations still send concurrently.
+    /// one peer delivered only 1 of 8 replies, consistently. Serializing sends
+    /// (never gating reads on it) fixed it. Destination sends do not need this:
+    /// `sendto()` on a non-blocking socket hands the datagram to the kernel
+    /// synchronously.
     private var pendingSends: [String: [Data]] = [:]
     private var sendInFlight: Set<String> = []
     private static let clientSendKey = "\u{0}client"
@@ -60,13 +65,13 @@ final class UDPRelay {
     private var bytesDown: UInt64 = 0
     private var datagramsUp = 0
     private var datagramsDown = 0
+    private var sendDrops = 0
     private var beatBytesUp: UInt64 = 0
     private var beatBytesDown: UInt64 = 0
     private var lastDataAt = DispatchTime.now()
     private var heartbeat: DispatchSourceTimer?
     private var stalled = false
     private var clientTransferReport: NWConnection.PendingDataTransferReport?
-    private var destinationTransferReports: [String: NWConnection.PendingDataTransferReport] = [:]
     private static let stallThresholdMs = 2000.0
 
     init(id: Int, queue: DispatchQueue, stats: ProxyStats) {
@@ -165,85 +170,96 @@ final class UDPRelay {
         }
     }
 
-    // MARK: - Destination side (one NWConnection per distinct host:port the client has talked to)
+    // MARK: - Destination side (shared unconnected sockets, any-source replies)
 
     private func relay(payload: Data, to host: String, port: UInt16) {
-        let key = "\(host):\(port)"
-        let destination: NWConnection
-        if let existing = destinations[key] {
-            destination = existing
-        } else {
-            guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-                DebugLog.debug("udp", tunnel: id, "UDP ASSOCIATE dropped datagram with invalid port \(port)")
-                return
+        if let address = EgressSocket.literalAddress(host: host, port: port) {
+            send(payload, to: address, label: "\(host):\(port)")
+            return
+        }
+        // Hostname (ATYP 3): resolve, then send.
+        let name = host.lowercased()
+        if let cached = resolved[name], cached.expires > DispatchTime.now() {
+            send(payload, to: EgressSocket.withPort(cached.address, port), label: "\(host):\(port)")
+            return
+        }
+        if pendingResolution[name] != nil {
+            if pendingResolution[name]!.count < Self.maxPendingPerName {
+                pendingResolution[name]!.append((payload, port))
+            } else {
+                sendDrops += 1
             }
-            let newConnection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: EgressTTL.udp)
-            destinations[key] = newConnection
-            newConnection.stateUpdateHandler = { [weak self] state in
-                guard let self = self else { return }
-                if case .failed(let error) = state {
-                    DebugLog.debug("udp", tunnel: self.id, "UDP ASSOCIATE destination \(key) FAILED \(ErrorDescription.describe(error))")
-                    self.logAndClearDestinationReport(key: key)
-                    self.destinations.removeValue(forKey: key)
-                    self.pendingSends.removeValue(forKey: key)
-                    self.sendInFlight.remove(key)
+            return
+        }
+        pendingResolution[name] = [(payload, port)]
+        let tunnelID = id
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let address = EgressSocket.resolve(name)
+            self?.queue.async {
+                guard let self = self, !self.cancelled else { return }
+                let waiting = self.pendingResolution.removeValue(forKey: name) ?? []
+                guard let address = address else {
+                    DebugLog.debug("udp", tunnel: tunnelID, "UDP ASSOCIATE could not resolve \(name), dropped \(waiting.count) datagram(s)")
+                    self.sendDrops += waiting.count
+                    return
+                }
+                self.resolved[name] = (address, DispatchTime.now() + Self.resolutionTTLSeconds)
+                for item in waiting {
+                    self.send(item.payload, to: EgressSocket.withPort(address, item.port), label: "\(name):\(item.port)")
                 }
             }
-            newConnection.start(queue: queue)
-            destinationTransferReports[key] = newConnection.startDataTransferReport()
-            logDestinationEstablishment(newConnection, key: key)
-            receiveFromDestination(newConnection, key: key)
-            destination = newConnection
+        }
+    }
+
+    private func send(_ payload: Data, to address: sockaddr_storage, label: String) {
+        guard let egress = egressSocket(for: Int32(address.ss_family)) else {
+            sendDrops += 1
+            return
+        }
+        let error = egress.send(payload, to: address)
+        if error != 0 {
+            sendDrops += 1
+            DebugLog.debug("udp", tunnel: id, "UDP ASSOCIATE send to \(label) failed errno=\(error) (\(String(cString: strerror(error))))")
+            return
+        }
+        if destinationsSeen.insert(label).inserted {
+            DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE first datagram to \(label) (\(payload.count)B)")
         }
         stats.addBytesUp(payload.count)
         bytesUp += UInt64(payload.count)
         datagramsUp += 1
         lastDataAt = DispatchTime.now()
-        enqueueSend(payload, on: destination, key: key)
     }
 
-    private func receiveFromDestination(_ connection: NWConnection, key: String) {
-        connection.receiveMessage { [weak self] data, _, _, error in
-            guard let self = self, !self.cancelled else { return }
-            guard error == nil else { return }
-            if let data = data, !data.isEmpty, let client = self.clientConnection {
-                self.stats.addBytesDown(data.count)
-                self.bytesDown += UInt64(data.count)
-                self.datagramsDown += 1
-                self.lastDataAt = DispatchTime.now()
-                let wrapped = Socks5.buildUDPDatagram(payload: data)
-                self.enqueueSend(wrapped, on: client, key: Self.clientSendKey)
-            }
-            self.receiveFromDestination(connection, key: key)
+    private func egressSocket(for family: Int32) -> EgressSocket? {
+        if family == AF_INET, let existing = egress4 { return existing }
+        if family == AF_INET6, let existing = egress6 { return existing }
+        guard family == AF_INET || family == AF_INET6 else { return nil }
+        let socket = EgressSocket(family: family, queue: queue) { [weak self] data, host, port in
+            self?.receivedFromRemote(data, host: host, port: port)
         }
-    }
-
-    private func logDestinationEstablishment(_ connection: NWConnection, key: String) {
-        let tunnelID = id
-        connection.requestEstablishmentReport(queue: queue) { report in
-            guard let report = report else {
-                DebugLog.debug("udp", tunnel: tunnelID, "destination \(key) establishment report unavailable")
-                return
-            }
-            let resolutions = report.resolutions.map {
-                "dns(source=\($0.source) proto=\($0.dnsProtocol) took=\(DurationFormat.ms($0.duration)) endpoints=\($0.endpointCount) success=\(EndpointDescription.describe($0.successfulEndpoint)) preferred=\(EndpointDescription.describe($0.preferredEndpoint)))"
-            }
-            let handshakes = report.handshakes.map {
-                "\($0.definition.name)(took=\(DurationFormat.ms($0.handshakeDuration)) rtt=\(DurationFormat.ms($0.handshakeRTT)))"
-            }
-            DebugLog.important("udp", tunnel: tunnelID, "destination \(key) establishment total=\(DurationFormat.ms(report.duration)) startedAfter=\(DurationFormat.ms(report.attemptStartedAfterInterval)) previousAttempts=\(report.previousAttemptCount) \(resolutions.joined(separator: " ")) handshakes=[\(handshakes.joined(separator: ","))]")
+        guard let socket = socket else {
+            DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE could not create \(family == AF_INET ? "IPv4" : "IPv6") egress socket errno=\(errno)")
+            return nil
         }
+        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE \(family == AF_INET ? "IPv4" : "IPv6") egress socket bound to local port \(socket.localPort)")
+        if family == AF_INET { egress4 = socket } else { egress6 = socket }
+        return socket
     }
 
-    private func logAndClearDestinationReport(key: String) {
-        guard let report = destinationTransferReports.removeValue(forKey: key) else { return }
-        let tunnelID = id
-        report.collect(queue: queue) { report in
-            DebugLog.important("udp", tunnel: tunnelID, "destination \(key) transfer report \(TransferReportDescription.describe(report))")
-        }
+    /// A datagram arrived on an egress socket from `host:port` — any remote,
+    /// not only ones the client has sent to (full cone).
+    private func receivedFromRemote(_ data: Data, host: String, port: UInt16) {
+        guard !cancelled, !data.isEmpty, let client = clientConnection else { return }
+        stats.addBytesDown(data.count)
+        bytesDown += UInt64(data.count)
+        datagramsDown += 1
+        lastDataAt = DispatchTime.now()
+        let wrapped = Socks5.buildUDPDatagram(host: host, port: port, payload: data)
+        enqueueSend(wrapped, on: client, key: Self.clientSendKey)
     }
 
-    // MARK: - Per-connection outbound send serialization
+    // MARK: - Client-connection outbound send serialization
 
     private func enqueueSend(_ payload: Data, on connection: NWConnection, key: String) {
         pendingSends[key, default: []].append(payload)
@@ -260,7 +276,7 @@ final class UDPRelay {
         connection.send(content: payload, contentContext: .defaultMessage, isComplete: true, completion: .contentProcessed { [weak self] error in
             guard let self = self else { return }
             if let error = error {
-                DebugLog.debug("udp", tunnel: tunnelID, "UDP ASSOCIATE send to \(key) error \(ErrorDescription.describe(error))")
+                DebugLog.debug("udp", tunnel: tunnelID, "UDP ASSOCIATE send to client error \(ErrorDescription.describe(error))")
             }
             self.sendInFlight.remove(key)
             self.sendNext(on: connection, key: key)
@@ -269,8 +285,8 @@ final class UDPRelay {
 
     // MARK: - Heartbeat / stall detection (mirrors Tunnel.startHeartbeat, one aggregate line for the whole
     // relay rather than per-destination — a relay can fan out to several destinations, e.g. DNS + QUIC +
-    // game traffic each opening their own NWConnection, and per-destination heartbeats would multiply 1Hz
-    // log volume by destination count for little value versus one summed line).
+    // game traffic, and per-destination heartbeats would multiply 1Hz log volume by destination count
+    // for little value versus one summed line).
 
     private func startHeartbeat() {
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -283,10 +299,10 @@ final class UDPRelay {
             self.beatBytesDown = self.bytesDown
             let idleMs = Double(DispatchTime.now().uptimeNanoseconds - self.lastDataAt.uptimeNanoseconds) / 1_000_000
             let pending = self.pendingSends.values.reduce(0) { $0 + $1.count }
-            DebugLog.debug("udp", tunnel: self.id, "heartbeat +up=\(deltaUp)B/s +down=\(deltaDown)B/s total up=\(self.bytesUp) down=\(self.bytesDown) datagrams up=\(self.datagramsUp) down=\(self.datagramsDown) destinations=\(self.destinations.count) pendingSends=\(pending) sendsInFlight=\(self.sendInFlight.count) idle=\(String(format: "%.0f", idleMs))ms")
+            DebugLog.debug("udp", tunnel: self.id, "heartbeat +up=\(deltaUp)B/s +down=\(deltaDown)B/s total up=\(self.bytesUp) down=\(self.bytesDown) datagrams up=\(self.datagramsUp) down=\(self.datagramsDown) destinations=\(self.destinationsSeen.count) sendDrops=\(self.sendDrops) pendingSends=\(pending) sendsInFlight=\(self.sendInFlight.count) idle=\(String(format: "%.0f", idleMs))ms")
             if idleMs > Self.stallThresholdMs && !self.stalled {
                 self.stalled = true
-                DebugLog.important("udp", tunnel: self.id, "STALL no datagrams either direction for \(String(format: "%.0f", idleMs))ms destinations=\(self.destinations.count) pendingSends=\(pending)")
+                DebugLog.important("udp", tunnel: self.id, "STALL no datagrams either direction for \(String(format: "%.0f", idleMs))ms destinations=\(self.destinationsSeen.count) pendingSends=\(pending)")
             } else if idleMs <= Self.stallThresholdMs && self.stalled {
                 self.stalled = false
                 DebugLog.important("udp", tunnel: self.id, "stall cleared")
@@ -303,7 +319,7 @@ final class UDPRelay {
         cancelled = true
         heartbeat?.cancel()
         heartbeat = nil
-        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay closed, \(destinations.count) destination(s) up=\(bytesUp)B/\(datagramsUp)dgrams down=\(bytesDown)B/\(datagramsDown)dgrams")
+        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay closed, \(destinationsSeen.count) destination(s) up=\(bytesUp)B/\(datagramsUp)dgrams down=\(bytesDown)B/\(datagramsDown)dgrams sendDrops=\(sendDrops)")
         if let report = clientTransferReport {
             let tunnelID = id
             report.collect(queue: queue) { report in
@@ -311,16 +327,233 @@ final class UDPRelay {
             }
             clientTransferReport = nil
         }
-        for key in destinations.keys { logAndClearDestinationReport(key: key) }
         listener?.cancel()
         clientConnection?.cancel()
-        for (_, connection) in destinations { connection.cancel() }
-        destinations.removeAll()
+        egress4?.close()
+        egress6?.close()
+        egress4 = nil
+        egress6 = nil
+        resolved.removeAll()
+        pendingResolution.removeAll()
         pendingSends.removeAll()
         sendInFlight.removeAll()
         if didOpenStats {
             didOpenStats = false
             stats.connectionClosed()
+        }
+    }
+}
+
+// MARK: - EgressSocket
+
+/// One unconnected, non-blocking BSD UDP socket (wildcard-bound, ephemeral
+/// port) with a dispatch read source. `sendto()` targets any destination and
+/// `recvfrom()` accepts datagrams from any source — the pieces Network.framework
+/// does not expose for UDP. Carries the same egress hop limit as the rest of
+/// the relay (`EgressTTL.hopLimit`).
+private final class EgressSocket {
+    private let fd: Int32
+    private let source: DispatchSourceRead
+    let localPort: UInt16
+
+    private static let bufferSize = 65536
+    private static let maxDatagramsPerWakeup = 64
+
+    /// `onDatagram(payload, sourceHost, sourcePort)` runs on `queue`.
+    init?(family: Int32, queue: DispatchQueue, onDatagram: @escaping (Data, String, UInt16) -> Void) {
+        let fd = socket(family, SOCK_DGRAM, 0)
+        guard fd >= 0 else { return nil }
+
+        var on: Int32 = 1
+        let intSize = socklen_t(MemoryLayout<Int32>.size)
+        if family == AF_INET6 {
+            setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, intSize)
+        }
+        var hops = Int32(EgressTTL.hopLimit)
+        if family == AF_INET {
+            // Without SO_BROADCAST, sendto() to a broadcast address fails with EACCES.
+            setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, intSize)
+            setsockopt(fd, IPPROTO_IP, IP_TTL, &hops, intSize)
+        } else {
+            setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &hops, intSize)
+        }
+        var bufBytes: Int32 = 1 << 20
+        setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufBytes, intSize)
+        setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufBytes, intSize)
+        let flags = fcntl(fd, F_GETFL)
+        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+
+        var bound = sockaddr_storage()
+        let boundLen: socklen_t
+        if family == AF_INET {
+            withUnsafeMutablePointer(to: &bound) {
+                $0.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                    $0.pointee.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                    $0.pointee.sin_family = sa_family_t(AF_INET)
+                }
+            }
+            boundLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        } else {
+            withUnsafeMutablePointer(to: &bound) {
+                $0.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) {
+                    $0.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                    $0.pointee.sin6_family = sa_family_t(AF_INET6)
+                }
+            }
+            boundLen = socklen_t(MemoryLayout<sockaddr_in6>.size)
+        }
+        let bindResult = withUnsafePointer(to: &bound) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, boundLen) }
+        }
+        guard bindResult == 0 else {
+            let saved = errno
+            Darwin.close(fd)
+            errno = saved
+            return nil
+        }
+
+        var actual = sockaddr_storage()
+        var actualLen = socklen_t(MemoryLayout<sockaddr_storage>.size)
+        _ = withUnsafeMutablePointer(to: &actual) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &actualLen) }
+        }
+        self.localPort = EgressSocket.decode(actual)?.port ?? 0
+
+        let buffer = UnsafeMutableRawPointer.allocate(byteCount: EgressSocket.bufferSize, alignment: 1)
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler {
+            var handled = 0
+            while handled < EgressSocket.maxDatagramsPerWakeup {
+                var from = sockaddr_storage()
+                var fromLen = socklen_t(MemoryLayout<sockaddr_storage>.size)
+                let n = withUnsafeMutablePointer(to: &from) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        recvfrom(fd, buffer, EgressSocket.bufferSize, 0, $0, &fromLen)
+                    }
+                }
+                if n < 0 { break }   // EWOULDBLOCK: drained
+                handled += 1
+                guard let (host, port) = EgressSocket.decode(from) else { continue }
+                onDatagram(Data(bytes: buffer, count: n), host, port)
+            }
+        }
+        source.setCancelHandler {
+            Darwin.close(fd)
+            buffer.deallocate()
+        }
+        self.fd = fd
+        self.source = source
+        source.resume()
+    }
+
+    /// Returns 0 on success, otherwise the `errno` from `sendto`.
+    func send(_ payload: Data, to address: sockaddr_storage) -> Int32 {
+        guard !payload.isEmpty else { return 0 }
+        var address = address
+        let length = socklen_t(address.ss_len)
+        let sent = payload.withUnsafeBytes { raw in
+            withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    sendto(fd, raw.baseAddress, raw.count, 0, $0, length)
+                }
+            }
+        }
+        return sent < 0 ? errno : 0
+    }
+
+    func close() {
+        source.cancel()
+    }
+
+    // MARK: Address helpers
+
+    /// IPv4/IPv6 literal → socket address; `nil` for anything else (a hostname).
+    static func literalAddress(host: String, port: UInt16) -> sockaddr_storage? {
+        var storage = sockaddr_storage()
+        var v4 = in_addr()
+        var v6 = in6_addr()
+        if inet_pton(AF_INET, host, &v4) == 1 {
+            withUnsafeMutablePointer(to: &storage) {
+                $0.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                    $0.pointee.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                    $0.pointee.sin_family = sa_family_t(AF_INET)
+                    $0.pointee.sin_port = port.bigEndian
+                    $0.pointee.sin_addr = v4
+                }
+            }
+            return storage
+        }
+        if inet_pton(AF_INET6, host, &v6) == 1 {
+            withUnsafeMutablePointer(to: &storage) {
+                $0.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) {
+                    $0.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                    $0.pointee.sin6_family = sa_family_t(AF_INET6)
+                    $0.pointee.sin6_port = port.bigEndian
+                    $0.pointee.sin6_addr = v6
+                }
+            }
+            return storage
+        }
+        return nil
+    }
+
+    static func withPort(_ address: sockaddr_storage, _ port: UInt16) -> sockaddr_storage {
+        var address = address
+        withUnsafeMutablePointer(to: &address) { pointer in
+            if Int32(pointer.pointee.ss_family) == AF_INET {
+                pointer.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_port = port.bigEndian }
+            } else {
+                pointer.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee.sin6_port = port.bigEndian }
+            }
+        }
+        return address
+    }
+
+    /// Blocking `getaddrinfo` — call off the relay queue. Prefers IPv4.
+    static func resolve(_ name: String) -> sockaddr_storage? {
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = SOCK_DGRAM
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(name, nil, &hints, &result) == 0, let first = result else { return nil }
+        defer { freeaddrinfo(result) }
+        var best: sockaddr_storage?
+        var cursor: UnsafeMutablePointer<addrinfo>? = first
+        while let info = cursor {
+            if let sa = info.pointee.ai_addr, info.pointee.ai_family == AF_INET || info.pointee.ai_family == AF_INET6 {
+                var storage = sockaddr_storage()
+                memcpy(&storage, sa, min(Int(info.pointee.ai_addrlen), MemoryLayout<sockaddr_storage>.size))
+                if info.pointee.ai_family == AF_INET { return storage }
+                if best == nil { best = storage }
+            }
+            cursor = info.pointee.ai_next
+        }
+        return best
+    }
+
+    /// Socket address → `(printable host, port)`.
+    static func decode(_ address: sockaddr_storage) -> (host: String, port: UInt16)? {
+        var address = address
+        var text = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+        switch Int32(address.ss_family) {
+        case AF_INET:
+            return withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
+                    var addr = sin.pointee.sin_addr
+                    guard inet_ntop(AF_INET, &addr, &text, socklen_t(text.count)) != nil else { return nil }
+                    return (String(cString: text), UInt16(bigEndian: sin.pointee.sin_port))
+                }
+            }
+        case AF_INET6:
+            return withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
+                    var addr = sin6.pointee.sin6_addr
+                    guard inet_ntop(AF_INET6, &addr, &text, socklen_t(text.count)) != nil else { return nil }
+                    return (String(cString: text), UInt16(bigEndian: sin6.pointee.sin6_port))
+                }
+            }
+        default:
+            return nil
         }
     }
 }
