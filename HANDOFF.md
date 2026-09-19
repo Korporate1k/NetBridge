@@ -1865,3 +1865,44 @@ The earlier QA pass left "does the client VPN survive a real app kill (swipe-awa
 (every `devicectl --terminate-existing` relaunch had killed the tunnel extension, including on plain SOCKS5). **Answer, reported by the
 project owner: yes, it survives a real app kill.** This is the owner's observation on a real device; it was not re-tested in this
 session, and the `devicectl --terminate-existing` result is therefore best read as an artifact of developer-launched processes.
+
+## 2026-09-19 — UDP routing QA (server relay verified on the Mac; on-device "all UDP via proxy" NOT re-verified)
+
+Request: confirm all UDP from the client device routes via the proxy. The physical iPhone was `unavailable` to `devicectl` this
+session, so the Client-VPN capture path (the part that decides whether *every* UDP flow enters the tunnel) could not be run.
+
+- **Socks5Client unit tests:** `swift test` — 30/30 pass (incl. 4 UDP association tests).
+- **Live server test** (iPhone 17 Pro simulator, `QA_AUTOSTART=1 QA_SERVER_PORT=18080`, raw-socket Python SOCKS5 UDP client; sim shares
+  the Mac network stack): 17/18 pass, and the 1 fail is a test artifact (see below).
+  - DNS A via 1.1.1.1 and 8.8.8.8: real 61-byte replies, transaction IDs match.
+  - Echo integrity 1/64/512/1200/1400/4000/9000 B: byte-exact.
+  - Destination saw the *relay's* socket (port 59697), never the client's (55217): traffic egresses from the relay, not directly.
+  - 200-datagram unpaced burst: 200/200, in order. IPv6 destination (ATYP 4): pass. ATYP 3 with a real host (dns.google): pass.
+    Two destinations interleaved in one association: pass.
+  - Malformed and FRAG!=0 datagrams dropped, relay stays healthy; a second sender is ignored; association torn down when the TCP control
+    connection closes.
+  - Server log counters cross-checked exactly: `up=214 dgrams / down=213 dgrams` = what the client sent/received (the 1 missing reply is the
+    artifact: `localhost` resolved to ::1 and the echo server was IPv4-only; the same ATYP 3 path passes with dns.google).
+- **Observation, not changed:** the relay's reply header carries BND `0.0.0.0:0`, not the datagram's real source (RFC 1928 wants the source).
+  Fine while tun2proxy uses one association per flow (as the on-device logs show); would break a client multiplexing several destinations
+  through one association.
+- **Not verified (needs the phone on the VPN + a packet capture on the server/hotspot):** that no UDP escapes the tunnel. Code review of
+  `PacketTunnelProvider`: IPv4+IPv6 default routes are included, only the server /32 is excluded, DNS is forced to 8.8.8.8/8.8.4.4 (UDP,
+  so tunnelled). Open questions: (1) LAN-subnet / multicast UDP (mDNS, AirPlay) may take the physical interface because a connected-subnet
+  route is more specific than the default route; (2) the relay advertises `LocalAddress.primaryIPv4()` as BND.ADDR — if that differs from
+  the configured server IP it is not in `excludedRoutes` and the UDP leg to the relay could loop back into the tunnel.
+- Earlier on-device evidence (Cloudflare speed test, 19 UDP ASSOCIATE relays through the tunnel) is in the 2026-09-18 section above.
+- Test listener stopped; no source files changed, so no IPA rebuild.
+
+## 2026-09-19 — UDP relay replies now carry the real source address (RFC 1928 §7)
+
+Fixes the spec deviation noted in the UDP QA section above: `UDPRelay` wrapped every reply with `0.0.0.0:0`.
+- `Socks5.buildUDPDatagram(payload:)` → `buildUDPDatagram(host:port:payload:)` (`Socks5Handler.swift`): encodes ATYP 1/4 for IP literals,
+  ATYP 3 for names. `UDPRelay.receiveFromDestination` now takes the destination `host`/`port` the client named and passes them through.
+  The source reported is the address *as the client named it* (a hostname destination is answered with the hostname, not a resolved IP).
+- **Verification (simulator, Debug build, live proxy + raw-socket client):** 20/20 pass — reply headers asserted byte-exact for
+  1.1.1.1:53, 8.8.8.8:53, 127.0.0.1:<echo>, ::1:<echo> (ATYP 4) and dns.google:53 (ATYP 3); all earlier checks unchanged (integrity 1–9000 B,
+  200/200 burst, malformed/FRAG/rogue-sender/teardown). The earlier `localhost` failure was a test artifact (IPv6 resolution vs an IPv4-only echo server).
+- NOT verified: on a device with the VPN engine (tun2proxy) consuming the new headers — it uses one association per flow so it should be
+  unaffected, but that is untested here. The Socks5Client package parses these headers with the same code path (30 unit tests still apply; not re-run).
+- Unsigned IPA rebuilt after this change: version 1.0 (20260919.141711) at build/Build/Products/Release-iphoneos/LocalProxy.ipa.
