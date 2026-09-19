@@ -1884,3 +1884,24 @@ teardown are unchanged; `UDPRelay`'s public interface (`init`, `start`, `cancel`
   3000/3000 both times, relay counters `up=3600000B/3000 down=3600000B/3000 sendDrops=0`.
 - NOT verified: on a device; tun2proxy consuming the new headers/behaviour; behaviour under cellular/hotspot interface changes; sustained-throughput
   comparison against the old design (the bulk test is client-paced); IPv6 to the public internet (only ::1 loopback tested).
+
+## 2026-09-19 — Branch `test/udp-fullcone-relay`: broadcast fix, large-payload ceiling, FIRST DEVICE TEST (iPhone 15 Plus)
+
+- **Broadcast:** `SO_BROADCAST` now set on the IPv4 egress socket. Before/after on the simulator: broadcast to 255.255.255.255 got no reply before, is delivered
+  and answered (reply tagged with the responder's real source) after. Full regression still 23/23.
+- **64 KB payloads: not testable through the OS.** Darwin caps one datagram at `net.inet.udp.maxdgram` = 9216 (raising it needs sudo); 9000 and 9200 B round-trip,
+  16000 B and up are refused by the *client's own* `sendto` (EMSGSIZE) before reaching the relay. Not a relay defect; iOS has the same default cap.
+- **Device test (15 Plus "iPhone M", Debug build of this branch, signed with team DS8AMC8BSV via `xcodebuild -destination platform=iOS,id=…` +
+  `devicectl device install app`; server = Mac-hosted simulator on 10.0.0.177:18080; VPN autoconnected with `QA_CLIENT_URI`/`QA_CLIENT_AUTOCONNECT`;
+  traffic = Safari on speed.cloudflare.com):** the tunnel engine began exactly **12 UDP flows** (10× :443 QUIC incl. hostname and IPv6 destinations, 2× :3478
+  WebRTC TURN) and the proxy opened exactly **12 relays, all from the phone (10.0.0.129), all with replies** (1667 datagrams up / 1669 down, `sendDrops=0`,
+  no resolve/send failures). All 12 engine flows ended with an idle "timed out"; no UDP errors this session; extension footprint ~5.6–5.9 MB.
+- **What this does and does not show:** every UDP flow that *entered the tunnel* was relayed (12/12). It does NOT prove nothing bypassed the tunnel — there is no
+  packet capture (tcpdump needs root here). LAN/multicast UDP (mDNS, AirPlay) and anything the OS keeps off utun would not appear in either log. Only ~12 UDP flows
+  were generated; no sustained UDP load, no WebRTC media, no games/VoIP.
+- **DNS is not relayed as UDP:** tun2proxy runs `--dns virtual`, so DNS (UDP/53) is answered locally with virtual IPs and connections are made by hostname
+  (`SOCKS5 CONNECT <name>:443`). No DNS queries leave the phone, but they also never appear as UDP ASSOCIATE traffic.
+- The extension's `/tmp/tunnel-debug.log` on the phone is cumulative across sessions (28K lines, thousands of old "Connection refused"/"No route to host"/
+  "Malformed label" UDP errors from earlier builds) — filter by the epoch of the latest `startEngine` before reading it.
+- New: relay logs one `UDP ASSOCIATE first datagram to <host:port>` line per destination. Phone left with VPN disconnected (app relaunched without
+  autoconnect; proxy traffic stopped); the phone now has THIS BRANCH's Debug build installed, replacing whatever was there before. Sim proxy stopped.

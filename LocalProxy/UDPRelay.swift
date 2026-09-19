@@ -222,7 +222,9 @@ final class UDPRelay {
             DebugLog.debug("udp", tunnel: id, "UDP ASSOCIATE send to \(label) failed errno=\(error) (\(String(cString: strerror(error))))")
             return
         }
-        destinationsSeen.insert(label)
+        if destinationsSeen.insert(label).inserted {
+            DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE first datagram to \(label) (\(payload.count)B)")
+        }
         stats.addBytesUp(payload.count)
         bytesUp += UInt64(payload.count)
         datagramsUp += 1
