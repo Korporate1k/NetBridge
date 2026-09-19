@@ -231,10 +231,31 @@ enum Socks5 {
         return .parsed(host: host, port: port, payload: Data(data[offset...]))
     }
 
-    /// `RSV(2)=0x0000 | FRAG(1)=0x00 | ATYP(1)=0x01 | 0.0.0.0 | 0 | payload` —
-    /// same fixed-dummy-address simplification as `reply(_:)`: real clients
-    /// only care about the payload in a UDP reply, not these header fields.
-    static func buildUDPDatagram(payload: Data) -> Data {
-        Data([0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0]) + payload
+    /// `RSV(2)=0x0000 | FRAG(1)=0x00 | ATYP | SRC.ADDR | SRC.PORT(2) | payload`.
+    /// RFC 1928 §7: in a relay-to-client datagram the address fields carry the
+    /// remote host the payload came from, so a client that shares one
+    /// association across several destinations can tell replies apart. `host`
+    /// is echoed exactly as the client named it (IPv4/IPv6 literal, or a
+    /// domain name sent as ATYP 3).
+    static func buildUDPDatagram(host: String, port: UInt16, payload: Data) -> Data {
+        var out = Data([0, 0, 0])
+        var v4 = in_addr()
+        var v6 = in6_addr()
+        if inet_pton(AF_INET, host, &v4) == 1 {
+            out.append(0x01)
+            out.append(contentsOf: withUnsafeBytes(of: &v4) { Array($0) })
+        } else if inet_pton(AF_INET6, host, &v6) == 1 {
+            out.append(0x04)
+            out.append(contentsOf: withUnsafeBytes(of: &v6) { Array($0) })
+        } else {
+            let name = Array(host.utf8.prefix(255))
+            out.append(0x03)
+            out.append(UInt8(name.count))
+            out.append(contentsOf: name)
+        }
+        out.append(UInt8(port >> 8))
+        out.append(UInt8(port & 0xFF))
+        out.append(payload)
+        return out
     }
 }

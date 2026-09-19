@@ -192,7 +192,7 @@ final class UDPRelay {
             newConnection.start(queue: queue)
             destinationTransferReports[key] = newConnection.startDataTransferReport()
             logDestinationEstablishment(newConnection, key: key)
-            receiveFromDestination(newConnection, key: key)
+            receiveFromDestination(newConnection, key: key, host: host, port: port)
             destination = newConnection
         }
         stats.addBytesUp(payload.count)
@@ -202,7 +202,7 @@ final class UDPRelay {
         enqueueSend(payload, on: destination, key: key)
     }
 
-    private func receiveFromDestination(_ connection: NWConnection, key: String) {
+    private func receiveFromDestination(_ connection: NWConnection, key: String, host: String, port: UInt16) {
         connection.receiveMessage { [weak self] data, _, _, error in
             guard let self = self, !self.cancelled else { return }
             guard error == nil else { return }
@@ -211,10 +211,10 @@ final class UDPRelay {
                 self.bytesDown += UInt64(data.count)
                 self.datagramsDown += 1
                 self.lastDataAt = DispatchTime.now()
-                let wrapped = Socks5.buildUDPDatagram(payload: data)
+                let wrapped = Socks5.buildUDPDatagram(host: host, port: port, payload: data)
                 self.enqueueSend(wrapped, on: client, key: Self.clientSendKey)
             }
-            self.receiveFromDestination(connection, key: key)
+            self.receiveFromDestination(connection, key: key, host: host, port: port)
         }
     }
 
