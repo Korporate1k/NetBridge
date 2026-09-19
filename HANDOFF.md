@@ -1945,3 +1945,33 @@ teardown are unchanged; `UDPRelay`'s public interface (`init`, `start`, `cancel`
   "Malformed label" UDP errors from earlier builds) — filter by the epoch of the latest `startEngine` before reading it.
 - New: relay logs one `UDP ASSOCIATE first datagram to <host:port>` line per destination. Phone left with VPN disconnected (app relaunched without
   autoconnect; proxy traffic stopped); the phone now has THIS BRANCH's Debug build installed, replacing whatever was there before. Sim proxy stopped.
+
+## 2026-09-19 — Merged full-cone UDP relay into main; MAX LOAD TEST (simulator old-vs-new + iPhone 15 Plus through the VPN)
+
+Merge commit `50aa405` (branch `test/udp-fullcone-relay`, kept). Load tools/hook live on the throwaway branch `test/udp-load-phone` (`scripts/udpload.c`, `loadrun.py`,
+`phonerun.py`, plus a DEBUG-only `QA_UDP_FLOOD` hook in `DashboardView.swift`; NOT merged to main). Unsigned IPA rebuilt after the merge: 1.0 (20260919.155303).
+
+**Simulator, Mac loopback, Release+DEBUG-flag arm64 builds, C generator + echo, 1200 B unless noted, 6 s steps.** Baseline with no relay: loopback carries 200k pps
+(~2 Gbit/s each way) at 0.01% loss, so all loss below is the relay. Old = connected `NWConnection` per destination (commit fd596ec); New = merged main.
+- Lossless ceiling (loss ≤0.5%): 1 association 20k pps both; 16 assocs 40k both (p50 latency **643 µs new vs 4.3 ms old**); 128 assocs 40k both (p50 **4.9 ms new vs 150 ms
+  old**); 64 B × 16 assocs ~50k both (latency bloated in both). 60 s soak @30k pps: 0% loss both; p50 **236 µs new vs 1216 µs old**; no fd leak (45→45), RSS settles.
+- Overload behaviour: 128 assocs @80k — old stalls (send rate collapses to 10k/s, p50 latency 29 s), new degrades gracefully (16% loss, 53k pps delivered).
+  16 assocs @80k: 30% loss new vs 52% old.
+- **REGRESSION: single association @40k pps — new 17.9% loss / p50 19 ms vs old 2.7%.** Likely cause (not verified): replies are pushed into `pendingSends` (the client-side
+  serialized `NWConnection.send` queue) with no bound, whereas the old per-destination `receiveMessage` loop was naturally paced. Follow-up: cap `pendingSends`/drop-oldest.
+- Concurrent associations at ~5 pps each: clean to 800 in both; 1600 → 48.6% loss in BOTH (identical 4113 pps, cause not identified); 3200 → ~780 associations fail to open in
+  BOTH (consistent with a file-descriptor ceiling, ~3 fds/association, not verified). No fd leak after teardown in either.
+- App CPU at 30k pps soak: ~189% old vs ~227% new (Mac, multi-core). RSS 170–265 MB. Debug-flag Release build of the app on a Mac — NOT representative of iPhone limits
+  (iOS soft fd limit is far lower; a phone running this as the SERVER would cap out at far fewer associations — untested).
+
+**iPhone 15 Plus → Client VPN → Mac-hosted relay → loopback echo** (target `udpN.localtest.me` → 127.0.0.1 only on the Mac, so packets can only reach the echo through the
+tunnel+relay; 8 flows, 20 s/step, Debug app, extension 3.9–4.1 MB footprint, 0 UDP engine errors, every flow = one relay):
+- 2k pps 0.10% loss; 5k 4.12%; 10k 1.01%; 20k 0.00%; 40k 0.02%; 80k 0.00%. Relay up == down datagram counts every step (relay lost nothing).
+- **The phone never got past ~4.3k pps sent (~41 Mbit/s each way) even with targets of 20k–80k and `sendErr=0`** — so this test did NOT find the relay's or tunnel's limit; the ceiling
+  is the phone-side send path (the flood loop is a Debug Swift build; tunnel vs generator not separated). p50 latency 67–95 ms, p99 190–560 ms end to end over Wi-Fi.
+- Loss in the first two steps (4.1%, 1.0%) happened phone→relay (relay counted fewer datagrams than the phone sent); cause not identified (warm-up suspected).
+- `relay_send_drops` 36–40 in the first steps: the relay drops datagrams beyond 32 buffered while a hostname's first `getaddrinfo` is in flight (`maxPendingPerName`).
+- Harness lessons: my first sim run was invalid (my load tool wrote destination port 0 in the SOCKS5 header) and step 2 of the first phone run was invalid (VPN did not reconnect,
+  zero relays); both were discarded, not reported. The phone flood only counts if the proxy saw relays.
+- NOT tested: sustained multi-minute phone load, cellular, phone-as-server, other UDP mixes, IPv6 flood, app in background. Phone left with the throwaway branch's Debug build
+  installed and the VPN down; the sim proxy and echo are stopped.
