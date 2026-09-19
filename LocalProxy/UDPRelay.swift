@@ -177,7 +177,7 @@ final class UDPRelay {
                 DebugLog.debug("udp", tunnel: id, "UDP ASSOCIATE dropped datagram with invalid port \(port)")
                 return
             }
-            let newConnection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .udp)
+            let newConnection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: EgressTTL.udp)
             destinations[key] = newConnection
             newConnection.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }

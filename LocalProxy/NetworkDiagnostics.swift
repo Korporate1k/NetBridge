@@ -77,6 +77,17 @@ enum EndpointDescription {
             return "\(endpoint)"
         }
     }
+
+    /// Clean IPv4/IPv6 address string with no port or brackets, for use as a
+    /// lookup key (e.g. GeoIP) rather than for display/logging.
+    static func rawIP(_ endpoint: NWEndpoint?) -> String? {
+        guard case .hostPort(let host, _) = endpoint else { return nil }
+        switch host {
+        case .ipv4(let address): return "\(address)"
+        case .ipv6(let address): return "\(address)"
+        default: return nil
+        }
+    }
 }
 
 enum DurationFormat {

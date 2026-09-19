@@ -27,6 +27,7 @@ struct Socks5ClientTestView: View {
             connectSection
             udpSection
         }
+        .keyboardDoneButton()
         .navigationTitle("SOCKS5 Client Test")
         .navigationBarTitleDisplayMode(.inline)
     }

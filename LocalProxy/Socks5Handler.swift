@@ -6,8 +6,12 @@ import Foundation
 /// bytes in here; kept separate and I/O-free so it can be hand-traced against
 /// RFC 1928's byte layouts without a device or test target.
 ///
-/// Only no-auth (`0x00`) is supported, matching the project's existing
-/// no-auth stance for its HTTP front end. Only `CONNECT` is implemented here;
+/// No-auth (`0x00`) is always accepted; RFC 1929 username/password (`0x02`)
+/// is additionally supported when a connection is configured to require it
+/// (see `ConnectProxyHandler.swift`'s `requiredCredentials` and
+/// `ProxyServer.swift`'s opt-in `requiredUsername`/`requiredPassword`) —
+/// matches the project's existing no-auth-by-default stance for its HTTP
+/// front end, auth is opt-in only. Only `CONNECT` is implemented here;
 /// `UDP ASSOCIATE` is parsed (so a client gets a clean "not supported" reply
 /// instead of a hang) but not yet relayed.
 enum Socks5 {
@@ -15,12 +19,16 @@ enum Socks5 {
 
     enum GreetingResult {
         case needMoreData
-        case ok(consumed: Int)
+        case selectedNoAuth(consumed: Int)
+        case selectedUserPass(consumed: Int)
         case noAcceptableMethod(consumed: Int)
     }
 
-    /// `data` is `VER(1)=0x05 | NMETHODS(1) | METHODS(NMETHODS)`.
-    static func parseGreeting(_ data: Data) -> GreetingResult {
+    /// `data` is `VER(1)=0x05 | NMETHODS(1) | METHODS(NMETHODS)`. When
+    /// `requireAuth` is true, only a client offering method `0x02`
+    /// (username/password) is accepted; otherwise only `0x00` (no-auth) is —
+    /// this project never negotiates down from required auth to no-auth.
+    static func parseGreeting(_ data: Data, requireAuth: Bool) -> GreetingResult {
         let base = data.startIndex
         guard data.count >= 2 else { return .needMoreData }
         guard data[base] == 0x05 else { return .noAcceptableMethod(consumed: data.count) }
@@ -28,11 +36,50 @@ enum Socks5 {
         let total = 2 + nMethods
         guard data.count >= total else { return .needMoreData }
         let methods = data[(base + 2)..<(base + total)]
-        return methods.contains(0x00) ? .ok(consumed: total) : .noAcceptableMethod(consumed: total)
+        if requireAuth {
+            return methods.contains(0x02) ? .selectedUserPass(consumed: total) : .noAcceptableMethod(consumed: total)
+        }
+        return methods.contains(0x00) ? .selectedNoAuth(consumed: total) : .noAcceptableMethod(consumed: total)
     }
 
     static let methodSelectionOK = Data([0x05, 0x00])
+    static let methodSelectionRequireAuth = Data([0x05, 0x02])
     static let methodSelectionNoAcceptable = Data([0x05, 0xFF])
+
+    // MARK: - RFC 1929 username/password auth sub-negotiation
+
+    enum AuthRequestResult {
+        case needMoreData
+        case parsed(username: String, password: String, consumed: Int)
+        case invalid
+    }
+
+    /// `data` is `VER(1)=0x01 | ULEN(1) | UNAME(ULEN) | PLEN(1) | PASSWD(PLEN)`
+    /// — the exact layout `Socks5ClientWire.buildAuthRequest` (client package)
+    /// produces.
+    static func parseAuthRequest(_ data: Data) -> AuthRequestResult {
+        let base = data.startIndex
+        guard data.count >= 2 else { return .needMoreData }
+        guard data[base] == 0x01 else { return .invalid }
+        let uLen = Int(data[base + 1])
+        var offset = base + 2
+        guard data.count >= (offset - base) + uLen else { return .needMoreData }
+        guard let username = String(data: data[offset..<offset + uLen], encoding: .utf8) else { return .invalid }
+        offset += uLen
+        guard data.count > offset - base else { return .needMoreData }
+        let pLen = Int(data[offset])
+        offset += 1
+        guard data.count >= (offset - base) + pLen else { return .needMoreData }
+        guard let password = String(data: data[offset..<offset + pLen], encoding: .utf8) else { return .invalid }
+        offset += pLen
+        return .parsed(username: username, password: password, consumed: offset - base)
+    }
+
+    /// `VER(1)=0x01 | STATUS(1)` — `0x00` success, non-zero failure. Matches
+    /// what `Socks5ClientWire.parseAuthReply` (client package) expects.
+    static func authReply(success: Bool) -> Data {
+        Data([0x01, success ? 0x00 : 0x01])
+    }
 
     // MARK: - Request
 

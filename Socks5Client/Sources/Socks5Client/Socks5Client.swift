@@ -1,14 +1,15 @@
 import Foundation
 import Network
 
-/// A SOCKS5 client (RFC 1928, no-auth only): dials a SOCKS5 proxy server and
-/// performs either a CONNECT (handing back a live `NWConnection` to the
-/// destination) or a UDP ASSOCIATE (handing back a `Socks5UDPAssociation`).
+/// A SOCKS5 client (RFC 1928), with optional RFC 1929 username/password
+/// authentication: dials a SOCKS5 proxy server and performs either a CONNECT
+/// (handing back a live `NWConnection` to the destination) or a UDP
+/// ASSOCIATE (handing back a `Socks5UDPAssociation`).
 ///
 /// Closure-based throughout, matching this codebase's existing
 /// `NWConnection`-driven style rather than async/await — there's no
 /// structured-concurrency benefit here worth diverging from that idiom for a
-/// two-round-trip handshake.
+/// two-round-trip (or three, with auth) handshake.
 public final class Socks5Client {
     public struct Endpoint {
         public let host: String
@@ -20,17 +21,24 @@ public final class Socks5Client {
         }
     }
 
+    /// Username/password to offer via RFC 1929 during the greeting. When
+    /// `nil`, only the no-auth method (0x00) is offered, matching this
+    /// client's original no-auth-only behavior exactly.
+    public typealias Credentials = (username: String, password: String)
+
     /// No-op by default. Set to route diagnostics through a host app's own
     /// logging (e.g. `{ DebugLog.debug("socks5client", $0) }`) — this
     /// package has no logging dependency of its own.
     public var logHandler: ((String) -> Void)?
 
     private let proxy: Endpoint
+    private let credentials: Credentials?
     private let queue: DispatchQueue
     private let parameters: NWParameters
 
-    public init(proxy: Endpoint, queue: DispatchQueue = DispatchQueue(label: "socks5client"), parameters: NWParameters? = nil) {
+    public init(proxy: Endpoint, credentials: Credentials? = nil, queue: DispatchQueue = DispatchQueue(label: "socks5client"), parameters: NWParameters? = nil) {
         self.proxy = proxy
+        self.credentials = credentials
         self.queue = queue
         self.parameters = parameters ?? .socks5ClientDefault()
     }
@@ -96,7 +104,7 @@ public final class Socks5Client {
                             completion(.failure(.malformedReply))
                             return
                         }
-                        let udpConnection = NWConnection(host: NWEndpoint.Host(bound.host), port: relayPort, using: .udp)
+                        let udpConnection = NWConnection(host: NWEndpoint.Host(bound.host), port: relayPort, using: .socks5ClientUDP())
                         let association = Socks5UDPAssociation(
                             controlConnection: control,
                             udpConnection: udpConnection,
@@ -124,20 +132,60 @@ public final class Socks5Client {
             case .failure(let error):
                 completion(.failure(error))
             case .success:
-                self.send(Socks5ClientWire.buildGreeting(), on: connection) { sendError in
+                self.send(Socks5ClientWire.buildGreeting(withAuth: self.credentials != nil), on: connection) { sendError in
                     if let sendError = sendError {
                         completion(.failure(sendError))
                         return
                     }
-                    self.receiveLoop(connection: connection, parse: { data -> ParseStep<Void> in
+                    self.receiveLoop(connection: connection, parse: { data -> ParseStep<UInt8> in
                         switch Socks5ClientWire.parseMethodSelection(data) {
                         case .needMoreData: return .needMoreData
-                        case .ok: return .success(())
+                        case .ok(let method): return .success(method)
                         case .rejected: return .failure(.noAcceptableAuthMethod)
                         case .invalidVersion(let version): return .failure(.unexpectedProtocolVersion(version))
                         }
-                    }, completion: completion)
+                    }, completion: { methodResult in
+                        switch methodResult {
+                        case .failure(let error):
+                            completion(.failure(error))
+                        case .success(let method) where method == 0x02:
+                            guard let credentials = self.credentials else {
+                                // Server picked username/password but we never offered
+                                // it (shouldn't happen — we only offer 0x02 when
+                                // credentials are configured) — fail rather than hang.
+                                completion(.failure(.noAcceptableAuthMethod))
+                                return
+                            }
+                            self.performAuth(connection, credentials: credentials, completion: completion)
+                        case .success:
+                            completion(.success(()))
+                        }
+                    })
                 }
+            }
+        }
+    }
+
+    /// RFC 1929 username/password sub-negotiation, run only after the server
+    /// selects method 0x02 during the greeting above.
+    private func performAuth(_ connection: NWConnection, credentials: Credentials, completion: @escaping (Result<Void, Socks5ClientError>) -> Void) {
+        switch Socks5ClientWire.buildAuthRequest(username: credentials.username, password: credentials.password) {
+        case .failure(let error):
+            completion(.failure(error))
+        case .success(let request):
+            send(request, on: connection) { sendError in
+                if let sendError = sendError {
+                    completion(.failure(sendError))
+                    return
+                }
+                self.receiveLoop(connection: connection, parse: { data -> ParseStep<Void> in
+                    switch Socks5ClientWire.parseAuthReply(data) {
+                    case .needMoreData: return .needMoreData
+                    case .success: return .success(())
+                    case .failure(let status): return .failure(.authenticationFailed(status: status))
+                    case .invalidVersion: return .failure(.malformedAuthReply)
+                    }
+                }, completion: completion)
             }
         }
     }

@@ -10,15 +10,7 @@
 	<array>
 		<string>location</string>
 	</array>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>LocalProxy uses your location in the background to keep the proxy running while the app is not on screen.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>LocalProxy uses your location to keep the proxy running.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>LocalProxy listens on the local network so other devices can connect to it.</string>
 	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 </dict>
 </plist>

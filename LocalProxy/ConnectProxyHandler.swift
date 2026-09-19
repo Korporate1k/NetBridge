@@ -3,7 +3,7 @@ import Network
 
 /// Handles one client connection end-to-end over Network.framework: parses the
 /// request via a `Frontend` (today, `HTTPFrontend` — see `Frontend.swift`),
-/// dials the outbound connection via `DirectTCPTransport` (see
+/// dials the outbound connection via a `DirectTCPTransport` (see
 /// `OutboundTransport.swift`), answers with the appropriate reply, then pipes
 /// bytes bidirectionally with Network.framework's built-in flow control.
 ///
@@ -24,6 +24,7 @@ final class Tunnel {
         case sendError(direction: String, error: String)
         case proxyStopped
         case udpAssociateClosed(String)
+        case authenticationFailed
 
         var text: String {
             switch self {
@@ -39,6 +40,7 @@ final class Tunnel {
             case .sendError(let dir, let e): return "sendError(\(dir): \(e))"
             case .proxyStopped: return "proxyStopped"
             case .udpAssociateClosed(let d): return "udpAssociateClosed(\(d))"
+            case .authenticationFailed: return "authenticationFailed (SOCKS5 RFC1929 auth rejected)"
             }
         }
     }
@@ -50,6 +52,14 @@ final class Tunnel {
     private let transport: DirectTCPTransport
     private let forcedProtocol: ListenerMode
     private let rateLimiter: RateLimiter?
+    /// Opt-in RFC 1929 credential requirement for this connection's SOCKS5
+    /// greeting — `nil` (the default) means no-auth only, identical to this
+    /// project's original behavior. Set from `ProxyServer.requiredUsername`/
+    /// `requiredPassword` when both are non-empty.
+    private let requiredCredentials: (username: String, password: String)?
+    /// Remote-configurable outbound dial resiliency — see `ProxyServer.outboundRetryAttempts`/`outboundRetryBaseSeconds`.
+    private let retryAttempts: Int
+    private let retryBaseSeconds: Double
     var onClose: (() -> Void)?
     var onActivity: ((String) -> Void)?
     /// Called once per request with the destination host (used to recognize devices).
@@ -77,6 +87,15 @@ final class Tunnel {
     private var modeName = "?"
     private var remoteAddress = "?"
     private var serverInterfaces = "?"
+    /// Only set for `.connect` requests whose host is an IP literal (a domain
+    /// host is already human-readable, so sniffing adds nothing there). See
+    /// `TrafficSniffer`.
+    private var sniffedHost: String?
+    /// True until the first upstream chunk has been offered to the sniffer.
+    /// One-shot: only the very first chunk is inspected, never later ones.
+    private var sniffPending = false
+    /// Raw dialed remote IP (no port/brackets), for GeoIP lookup.
+    private var destinationIP: String?
     private var bytesUp: UInt64 = 0
     private var bytesDown: UInt64 = 0
     private var chunksUp = 0
@@ -97,7 +116,9 @@ final class Tunnel {
     private static let stallThresholdMs = 2000.0
 
     init(id: Int, client: NWConnection, queue: DispatchQueue, stats: ProxyStats, transport: DirectTCPTransport,
-         forcedProtocol: ListenerMode = .auto, rateLimiter: RateLimiter? = nil) {
+         forcedProtocol: ListenerMode = .auto, rateLimiter: RateLimiter? = nil,
+         retryAttempts: Int = 3, retryBaseSeconds: Double = 1,
+         requiredCredentials: (username: String, password: String)? = nil) {
         self.id = id
         self.client = client
         self.queue = queue
@@ -105,6 +126,9 @@ final class Tunnel {
         self.transport = transport
         self.forcedProtocol = forcedProtocol
         self.rateLimiter = rateLimiter
+        self.retryAttempts = max(0, retryAttempts)
+        self.retryBaseSeconds = max(0, retryBaseSeconds)
+        self.requiredCredentials = requiredCredentials
     }
 
     func start() {
@@ -192,7 +216,7 @@ final class Tunnel {
     /// if needed. Callable both from the initial sniff (buffer already primed
     /// with the first chunk) and recursively once more data arrives.
     private func receiveSocks5Greeting() {
-        switch Socks5.parseGreeting(socks5Buffer) {
+        switch Socks5.parseGreeting(socks5Buffer, requireAuth: requiredCredentials != nil) {
         case .needMoreData:
             client.receive(minimumIncompleteLength: 1, maximumLength: Self.maxHeaderBytes) { [weak self] data, _, isComplete, error in
                 guard let self = self else { return }
@@ -205,7 +229,7 @@ final class Tunnel {
                     self.cleanup(.clientClosedBeforeRequest(detail))
                 }
             }
-        case .ok(let consumed):
+        case .selectedNoAuth(let consumed):
             socks5Buffer.removeFirst(consumed)
             DebugLog.important("client", tunnel: id, "SOCKS5 greeting ok (no-auth offered)")
             client.send(content: Socks5.methodSelectionOK, completion: .contentProcessed { [weak self] sendError in
@@ -217,11 +241,74 @@ final class Tunnel {
                 }
                 self.receiveSocks5Request()
             })
+        case .selectedUserPass(let consumed):
+            socks5Buffer.removeFirst(consumed)
+            DebugLog.important("client", tunnel: id, "SOCKS5 greeting selected username/password auth")
+            client.send(content: Socks5.methodSelectionRequireAuth, completion: .contentProcessed { [weak self] sendError in
+                guard let self = self else { return }
+                if let sendError = sendError {
+                    DebugLog.important("client", tunnel: self.id, "SOCKS5 method-selection send error \(ErrorDescription.describe(sendError))")
+                    self.cleanup(.badRequest)
+                    return
+                }
+                self.receiveSocks5Auth()
+            })
         case .noAcceptableMethod(let consumed):
             socks5Buffer.removeFirst(consumed)
-            DebugLog.important("client", tunnel: id, "SOCKS5 no acceptable auth method offered (no-auth not in list)")
+            DebugLog.important("client", tunnel: id, "SOCKS5 no acceptable auth method offered (required=\(requiredCredentials != nil))")
             client.send(content: Socks5.methodSelectionNoAcceptable, completion: .contentProcessed { [weak self] _ in
                 self?.cleanup(.badRequest)
+            })
+        }
+    }
+
+    /// RFC 1929 username/password sub-negotiation, entered only after the
+    /// greeting selected method `0x02` (i.e. this connection is configured
+    /// via `requiredCredentials` to require auth). Mirrors
+    /// `receiveSocks5Request()`'s own buffer/parse-loop shape for multi-chunk
+    /// arrivals.
+    private func receiveSocks5Auth() {
+        switch Socks5.parseAuthRequest(socks5Buffer) {
+        case .needMoreData:
+            if socks5Buffer.count > Self.maxHeaderBytes {
+                DebugLog.important("client", tunnel: id, "SOCKS5 auth request exceeds \(Self.maxHeaderBytes) bytes")
+                cleanup(.authenticationFailed)
+                return
+            }
+            client.receive(minimumIncompleteLength: 1, maximumLength: Self.maxHeaderBytes) { [weak self] data, _, isComplete, error in
+                guard let self = self else { return }
+                if let data = data, !data.isEmpty {
+                    self.socks5Buffer.append(data)
+                    self.receiveSocks5Auth()
+                } else if isComplete || error != nil {
+                    let detail = "SOCKS5 auth: bytesReceived=\(self.socks5Buffer.count) isComplete=\(isComplete) error=\(ErrorDescription.describe(error))"
+                    DebugLog.important("client", tunnel: self.id, "client closed before sending a full SOCKS5 auth request: \(detail)")
+                    self.cleanup(.clientClosedBeforeRequest(detail))
+                }
+            }
+        case .invalid:
+            DebugLog.important("client", tunnel: id, "UNPARSEABLE SOCKS5 auth request, first 512 bytes: \(Self.escaped(socks5Buffer.prefix(512)))")
+            client.send(content: Socks5.authReply(success: false), completion: .contentProcessed { [weak self] _ in
+                self?.cleanup(.authenticationFailed)
+            })
+        case .parsed(let username, let password, let consumed):
+            socks5Buffer.removeFirst(consumed)
+            // Never log the password itself — matches this file's existing
+            // credential-redaction stance for HTTP headers (see `headerText`).
+            let ok = requiredCredentials.map { $0.username == username && $0.password == password } ?? false
+            DebugLog.important("client", tunnel: id, "SOCKS5 auth attempt user=\(username) result=\(ok ? "OK" : "REJECTED")")
+            client.send(content: Socks5.authReply(success: ok), completion: .contentProcessed { [weak self] sendError in
+                guard let self = self else { return }
+                if let sendError = sendError {
+                    DebugLog.important("client", tunnel: self.id, "SOCKS5 auth reply send error \(ErrorDescription.describe(sendError))")
+                    self.cleanup(.badRequest)
+                    return
+                }
+                if ok {
+                    self.receiveSocks5Request()
+                } else {
+                    self.cleanup(.authenticationFailed)
+                }
             })
         }
     }
@@ -336,9 +423,18 @@ final class Tunnel {
         target = "\(host):\(port)"
         onTarget?(host)
         switch request {
-        case .connect(_, _, _, let meta):
+        case .connect(_, _, let earlyData, let meta):
             modeName = meta.label
             onActivity?("\(meta.label) \(host):\(port)")
+            // Only sniff when the host is otherwise opaque (an IP literal) —
+            // a domain host is already the human-readable answer.
+            if IPv4Address(host) != nil || IPv6Address(host) != nil {
+                if !earlyData.isEmpty {
+                    sniffedHost = TrafficSniffer.extractHost(from: earlyData)
+                } else {
+                    sniffPending = true
+                }
+            }
         case .httpForward:
             modeName = "HTTP-forward"
             onActivity?("HTTP forward \(host):\(port)")
@@ -387,6 +483,7 @@ final class Tunnel {
                 self.readyAt = DispatchTime.now()
                 let path = server.currentPath
                 self.remoteAddress = EndpointDescription.describe(path?.remoteEndpoint)
+                self.destinationIP = EndpointDescription.rawIP(path?.remoteEndpoint)
                 self.serverInterfaces = path.map { p in
                     p.availableInterfaces.filter { p.usesInterfaceType($0.type) }.map(\.name).joined(separator: ",")
                 } ?? "?"
@@ -427,9 +524,9 @@ final class Tunnel {
                 let errorText = ErrorDescription.describe(error)
                 DebugLog.important("server", tunnel: self.id, "state FAILED \(errorText) attempt=\(attempt) didOpen=\(self.didOpen) \(self.progressText()) openTunnels=\(self.openTunnelCount()) path: \(PathDescription.describe(server.currentPath))")
                 self.onActivity?("outbound \(host):\(port) FAILED: \(errorText)")
-                if !self.didOpen && attempt < 3 {
-                    let delay = Double(1 << attempt) // 1s, 2s, 4s
-                    DebugLog.important("server", tunnel: self.id, "retrying \(host):\(port) in \(delay)s (attempt \(attempt + 1) of 3)")
+                if !self.didOpen && attempt < self.retryAttempts {
+                    let delay = self.retryBaseSeconds * Double(1 << attempt) // e.g. 1s, 2s, 4s
+                    DebugLog.important("server", tunnel: self.id, "retrying \(host):\(port) in \(delay)s (attempt \(attempt + 1) of \(self.retryAttempts))")
                     self.queue.asyncAfter(deadline: .now() + delay) { [weak self] in
                         self?.connectOutbound(dialHost: dialHost, host: host, port: port, request: request, attempt: attempt + 1)
                     }
@@ -483,6 +580,10 @@ final class Tunnel {
             }
 
             let count = data.count
+            if isUpstream && self.sniffPending {
+                self.sniffPending = false
+                self.sniffedHost = self.sniffedHost ?? TrafficSniffer.extractHost(from: data)
+            }
             if isUpstream {
                 self.stats.addBytesUp(count)
                 self.bytesUp += UInt64(count)
@@ -505,7 +606,8 @@ final class Tunnel {
             // so a slow destination can't cause unbounded buffering.
             self.sendsInFlight += 1
             let sendStart = DispatchTime.now()
-            let doSend = {
+            let doSend = { [weak self] in
+                guard let self else { return }
                 destination.send(content: data, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed { [weak self] sendError in
                     guard let self = self else { return }
                     self.sendsInFlight -= 1
@@ -566,7 +668,9 @@ final class Tunnel {
 
         let firstByte = firstByteDownAt.map { Self.ms(from: readyAt ?? acceptedAt, to: $0) } ?? "never"
         let firstByteToClient = firstByteToClientAt.map { Self.ms(from: acceptedAt, to: $0) } ?? "never"
-        DebugLog.important("tunnel", tunnel: id, "CLOSED reason=\(reason.text) target=\(target) mode=\(modeName) remote=\(remoteAddress) iface=\(serverInterfaces) lifetime=\(Self.ms(since: acceptedAt)) sinceReady=\(msSinceReady()) firstByteDown=\(firstByte) firstByteToClient=\(firstByteToClient) up=\(bytesUp)B/\(chunksUp)chunks down=\(bytesDown)B/\(chunksDown)chunks openTunnels=\(openTunnelCount())")
+        let geo = destinationIP.flatMap { GeoIPLookup.shared.lookup($0) }
+        let geoText = geo.map { "\($0.countryCode)\($0.city.map { "/\($0)" } ?? "")" } ?? "none"
+        DebugLog.important("tunnel", tunnel: id, "CLOSED reason=\(reason.text) target=\(target) mode=\(modeName) remote=\(remoteAddress) sniffedHost=\(sniffedHost ?? "none") geo=\(geoText) iface=\(serverInterfaces) lifetime=\(Self.ms(since: acceptedAt)) sinceReady=\(msSinceReady()) firstByteDown=\(firstByte) firstByteToClient=\(firstByteToClient) up=\(bytesUp)B/\(chunksUp)chunks down=\(bytesDown)B/\(chunksDown)chunks openTunnels=\(openTunnelCount())")
 
         // Snapshots taken at collect time, so this must happen before cancel().
         if let report = transferReport {
@@ -588,7 +692,9 @@ final class Tunnel {
         if target != "?" {
             let durationMs = Double(DispatchTime.now().uptimeNanoseconds &- acceptedAt.uptimeNanoseconds) / 1_000_000
             onSummary?(ConnectionSummary(target: target, mode: modeName, bytesUp: bytesUp, bytesDown: bytesDown,
-                                          durationMs: durationMs, closedAt: Date(), reason: reason.text))
+                                          durationMs: durationMs, closedAt: Date(), reason: reason.text,
+                                          destinationIP: destinationIP, sniffedHost: sniffedHost,
+                                          countryCode: geo?.countryCode, countryName: geo?.countryName, city: geo?.city))
         }
         client.cancel()
         server?.cancel()

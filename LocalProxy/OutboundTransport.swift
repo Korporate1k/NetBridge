@@ -1,8 +1,8 @@
 import Foundation
 import Network
 
-/// How `Tunnel` reaches the origin: a direct TCP `NWConnection` using
-/// `.tunedTCP()` (below) instead of the bare `.tcp` preset for throughput.
+/// A direct TCP `NWConnection` using `.tunedTCP()` (below) instead of the bare
+/// `.tcp` preset for throughput.
 struct DirectTCPTransport {
     func dial(host: String, port: NWEndpoint.Port) -> NWConnection {
         let parameters = NWParameters.tunedTCP()
@@ -11,6 +11,7 @@ struct DirectTCPTransport {
         // system proxy configuration — only meaningful for the dialing side,
         // not the inbound listener, so it isn't part of `tunedTCP()` itself.
         parameters.preferNoProxies = true
+        EgressTTL.install(on: parameters)
         return NWConnection(host: NWEndpoint.Host(host), port: port, using: parameters)
     }
 }
@@ -56,6 +57,30 @@ extension NWParameters {
         // without misrepresenting this as voice/video-specific traffic.
         parameters.serviceClass = .responsiveData
 
+        return parameters
+    }
+}
+
+/// IP TTL / IPv6 hop-limit forced onto every egress (dial-out) connection, so
+/// relayed traffic that leaves this device reads like a phone dialing directly
+/// (64 is the stock iPhone/iPad/macOS/Linux value).
+enum EgressTTL {
+    static let hopLimit: UInt8 = 64
+
+    /// Installs the egress hop limit onto `parameters` (mutates in place).
+    ///
+    /// `NWProtocolIP.Options` has no accessible initializer, so we don't build
+    /// a fresh one — we grab the internet-protocol options the default protocol
+    /// stack already created and mutate its hop limit in place.
+    static func install(on parameters: NWParameters) {
+        guard let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options else { return }
+        ip.hopLimit = hopLimit
+    }
+
+    /// UDP preset with the egress hop limit installed.
+    static var udp: NWParameters {
+        let parameters = NWParameters.udp
+        install(on: parameters)
         return parameters
     }
 }

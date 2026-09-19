@@ -11,6 +11,16 @@ final class BackgroundKeeper: NSObject, ObservableObject, CLLocationManagerDeleg
     @Published private(set) var isKeepingAlive = false
     @Published private(set) var lastUpdate: Date?
 
+    /// Remote kill switch (`RemoteConfigManager` → `backgroundKeepAliveEnabled`).
+    /// `start()` refuses while `false`; flipping it off also stops an
+    /// already-running keep-alive via `onDisableRequested`, wired once by
+    /// `DashboardView` since this is a `static var` with no instance to
+    /// reach on its own.
+    static var remoteEnabled = true {
+        didSet { if !remoteEnabled { onDisableRequested?() } }
+    }
+    static var onDisableRequested: (() -> Void)?
+
     private let manager = CLLocationManager()
     private var updateCount = 0
 
@@ -43,6 +53,10 @@ final class BackgroundKeeper: NSObject, ObservableObject, CLLocationManagerDeleg
     }
 
     func start() {
+        guard Self.remoteEnabled else {
+            DebugLog.important("location", "keep-alive start SKIPPED — disabled remotely")
+            return
+        }
         guard CLLocationManager.locationServicesEnabled(),
               manager.authorizationStatus == .authorizedAlways else {
             DebugLog.important("location", "keep-alive start SKIPPED servicesEnabled=\(CLLocationManager.locationServicesEnabled()) authorization=\(Self.describe(manager.authorizationStatus))")

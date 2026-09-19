@@ -12,6 +12,15 @@ struct ConnectionSummary: Identifiable {
     let durationMs: Double
     let closedAt: Date
     let reason: String
+    /// Raw dialed remote IP (no port), nil if the tunnel never reached `.ready`.
+    let destinationIP: String?
+    /// TLS SNI / HTTP Host peeked from the byte stream, only attempted when
+    /// `target`'s host was an IP literal. Nil if not attempted or not found.
+    let sniffedHost: String?
+    /// From the bundled offline GeoIP database — see `GeoIPLookup.swift`.
+    let countryCode: String?
+    let countryName: String?
+    let city: String?
 }
 
 /// A capped, most-recent-first list of recently closed connections, fed by
@@ -20,18 +29,30 @@ struct ConnectionSummary: Identifiable {
 /// disk) so the dashboard can show a quick, structured recent-activity list
 /// without parsing the log file.
 final class ConnectionHistory: ObservableObject {
-    static let limit = 200
+    static let defaultLimit = 200
 
     @Published private(set) var entries: [ConnectionSummary] = []
     private let lock = NSLock()
     private var storage: [ConnectionSummary] = []
+    /// Set by `RemoteConfigManager` from `connectionHistoryLimit`.
+    private var limit = ConnectionHistory.defaultLimit
+
+    func setLimit(_ newLimit: Int) {
+        guard newLimit > 0 else { return }
+        lock.lock()
+        limit = newLimit
+        if storage.count > limit { storage.removeLast(storage.count - limit) }
+        let snapshot = storage
+        lock.unlock()
+        DispatchQueue.main.async { self.entries = snapshot }
+    }
 
     /// Safe to call from any tunnel's queue — mutates the private, lock-protected
     /// `storage` there, and only republishes `entries` (read by SwiftUI) on main.
     func record(_ summary: ConnectionSummary) {
         lock.lock()
         storage.insert(summary, at: 0)
-        if storage.count > Self.limit { storage.removeLast(storage.count - Self.limit) }
+        if storage.count > limit { storage.removeLast(storage.count - limit) }
         let snapshot = storage
         lock.unlock()
         DispatchQueue.main.async { self.entries = snapshot }

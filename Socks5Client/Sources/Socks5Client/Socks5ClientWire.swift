@@ -15,14 +15,21 @@ import Glibc
 enum Socks5ClientWire {
     // MARK: - Greeting / method selection
 
-    /// `VER(1)=0x05 | NMETHODS(1)=1 | METHODS(1)=[0x00]` — no-auth only.
-    static func buildGreeting() -> Data {
-        Data([0x05, 0x01, 0x00])
+    /// `VER(1)=0x05 | NMETHODS(1)=2 | METHODS(2)=[0x00, 0x02]` — offer no-auth or username/password.
+    /// If `credentials` are present, offer both methods; otherwise offer no-auth only.
+    static func buildGreeting(withAuth: Bool = false) -> Data {
+        if withAuth {
+            // Offer both no-auth (0x00) and username/password (0x02)
+            return Data([0x05, 0x02, 0x00, 0x02])
+        } else {
+            // Offer no-auth only
+            return Data([0x05, 0x01, 0x00])
+        }
     }
 
     enum MethodSelectionResult {
         case needMoreData
-        case ok
+        case ok(method: UInt8)  // 0x00 = no-auth, 0x02 = username/password
         case rejected(method: UInt8)
         case invalidVersion(UInt8)
     }
@@ -33,7 +40,8 @@ enum Socks5ClientWire {
         let base = data.startIndex
         guard data[base] == 0x05 else { return .invalidVersion(data[base]) }
         let method = data[base + 1]
-        return method == 0x00 ? .ok : .rejected(method: method)
+        // Accept both 0x00 (no-auth) and 0x02 (username/password)
+        return (method == 0x00 || method == 0x02) ? .ok(method: method) : .rejected(method: method)
     }
 
     // MARK: - Request
@@ -156,6 +164,46 @@ enum Socks5ClientWire {
         let port = (UInt16(data[offset]) << 8) | UInt16(data[offset + 1])
         offset += 2
         return .parsed(host: host, port: port, payload: Data(data[offset...]))
+    }
+
+    // MARK: - RFC 1929 Username/Password Authentication
+
+    enum AuthReplyResult {
+        case needMoreData
+        case success
+        case failure(status: UInt8)
+        case invalidVersion(UInt8)
+    }
+
+    /// Build RFC 1929 auth request: `VER(1)=0x01 | ULEN(1) | UNAME(ULEN) | PLEN(1) | PASSWD(PLEN)`.
+    /// Both username and password must be ≤ 255 bytes in UTF-8; raises an error if either exceeds that.
+    static func buildAuthRequest(username: String, password: String) -> Result<Data, Socks5ClientError> {
+        let usernameBytes = Array(username.utf8)
+        let passwordBytes = Array(password.utf8)
+
+        guard usernameBytes.count <= 255 else {
+            return .failure(.credentialTooLong("username exceeds 255 bytes"))
+        }
+        guard passwordBytes.count <= 255 else {
+            return .failure(.credentialTooLong("password exceeds 255 bytes"))
+        }
+
+        var out = Data([0x01])  // Version = 1 (RFC 1929)
+        out.append(UInt8(usernameBytes.count))
+        out.append(contentsOf: usernameBytes)
+        out.append(UInt8(passwordBytes.count))
+        out.append(contentsOf: passwordBytes)
+
+        return .success(out)
+    }
+
+    /// Parse RFC 1929 auth reply: `VER(1)=0x01 | STATUS(1)` where STATUS=0x00 is success.
+    static func parseAuthReply(_ data: Data) -> AuthReplyResult {
+        guard data.count >= 2 else { return .needMoreData }
+        let base = data.startIndex
+        guard data[base] == 0x01 else { return .invalidVersion(data[base]) }
+        let status = data[base + 1]
+        return status == 0x00 ? .success : .failure(status: status)
     }
 
     // MARK: - Address encoding/decoding helpers

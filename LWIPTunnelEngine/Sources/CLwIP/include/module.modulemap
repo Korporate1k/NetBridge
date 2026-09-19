@@ -1,0 +1,13 @@
+module CLwIP {
+    umbrella header "CLwIPShim.h"
+    export *
+
+    // memp_std.h is a classic X-macro header, deliberately re-#included
+    // multiple times (by lwip/memp.h) with LWIP_MEMPOOL redefined
+    // differently each time. Clang's module system builds one AST per
+    // module and can't represent "the same header means something
+    // different on its second inclusion" — marking it `textual` tells
+    // Clang to always reprocess it inline as plain text instead of
+    // caching/canonicalizing it as a modular sub-unit.
+    textual header "lwip/priv/memp_std.h"
+}

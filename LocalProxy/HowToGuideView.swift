@@ -10,9 +10,8 @@ struct HowToGuideView: View {
     private var address: String { "\(server.localIP ?? "detecting…"):\(server.port)" }
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
+        ScrollView {
+            VStack(spacing: 16) {
                     overviewCard
                     deviceCard(title: "Windows PC", systemImage: "pc",
                                steps: [
@@ -42,19 +41,18 @@ struct HowToGuideView: View {
                                 "Server: \(server.localIP ?? "this device's address")   Port: \(server.port)",
                                 "Save. The same steps apply on iPadOS as on iOS."
                                ],
-                               footnote: "LocalProxy itself is a universal iPhone app — it also installs and runs on iPad.")
+                               footnote: "NetBridge itself is a universal iPhone app — it also installs and runs on iPad.")
                 } .padding(16)
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("How To")
-        }
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle("How To")
     }
 
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("What LocalProxy does", systemImage: "network")
                 .font(.headline)
-            Text("LocalProxy runs a local HTTP CONNECT and SOCKS5 (TCP + UDP) proxy on this device. Point another device's proxy setting at the address and port below, and its traffic routes through this phone — useful for testing, debugging, content filtering, or general local-network relaying.")
+            Text("NetBridge runs a local HTTP CONNECT and SOCKS5 (TCP + UDP) proxy on this device. Point another device's proxy setting at the address and port below, and its traffic routes through this phone — useful for testing, debugging, content filtering, or general local-network relaying.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             HStack {

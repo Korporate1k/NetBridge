@@ -1,0 +1,39 @@
+This directory vendors third-party C source, all under permissive licenses.
+
+BadVPN (tun2socks, base/, flow/, system/, misc/, structure/, protocol/,
+socksclient/, tuntap/, udpgw_client/, generated/)
+  Copyright (C) Ambroz Bizjak <ambrop7@gmail.com>
+  BSD 3-Clause. See the license header in each source file (e.g.
+  tun2socks/tun2socks.h), reproduced here:
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+  1. Redistributions of source code must retain the above copyright
+     notice, this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in the
+     documentation and/or other materials provided with the distribution.
+  3. Neither the name of the author nor the
+     names of its contributors may be used to endorse or promote products
+     derived from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+lwIP (lwip/)
+  Copyright (c) 2001-2004 Swedish Institute of Computer Science.
+  BSD 3-Clause (see lwip/src/include/lwip/init.h and lwip/COPYING-style
+  headers for the full text).
+
+The iOS-specific BTap.m `__APPLE__` branch was modified to route outbound
+packets through `ctun2socks_output` (defined in ctun2socks_bridge.c) instead
+of Potatso's `TunnelInterface` Objective-C class, so this target carries no
+Objective-C dependency on the host app.

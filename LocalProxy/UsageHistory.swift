@@ -13,12 +13,20 @@ struct UsageSample: Identifiable {
 /// the proxy runs, mirroring `ProxyServer`'s existing 1Hz throughput-logging
 /// timer pattern at a slower, UI-appropriate cadence.
 final class UsageHistory: ObservableObject {
-    static let capacity = 720 // 1 hour at 5s resolution
+    static let defaultCapacity = 720 // 1 hour at 5s resolution
 
     @Published private(set) var samples: [UsageSample] = []
     private var lastUp: UInt64 = 0
     private var lastDown: UInt64 = 0
     private var lastAt: Date?
+    /// Set by `RemoteConfigManager` from `usageHistoryCapacity`.
+    private var capacity = UsageHistory.defaultCapacity
+
+    func setCapacity(_ newCapacity: Int) {
+        guard newCapacity > 0 else { return }
+        capacity = newCapacity
+        if samples.count > capacity { samples.removeFirst(samples.count - capacity) }
+    }
 
     func reset() {
         samples = []
@@ -36,6 +44,6 @@ final class UsageHistory: ObservableObject {
         let upRate = bytesUp >= lastUp ? Double(bytesUp - lastUp) / elapsed : 0
         let downRate = bytesDown >= lastDown ? Double(bytesDown - lastDown) / elapsed : 0
         samples.append(UsageSample(at: now, up: upRate, down: downRate))
-        if samples.count > Self.capacity { samples.removeFirst(samples.count - Self.capacity) }
+        if samples.count > capacity { samples.removeFirst(samples.count - capacity) }
     }
 }

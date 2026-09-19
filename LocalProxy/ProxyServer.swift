@@ -15,12 +15,19 @@ final class ProxyServer: ObservableObject {
     @Published private(set) var activeConnections = 0
     @Published private(set) var bytesUp: UInt64 = 0
     @Published private(set) var bytesDown: UInt64 = 0
+    @Published private(set) var rateUp: Double = 0
+    @Published private(set) var rateDown: Double = 0
     @Published private(set) var lastError: String?
     @Published private(set) var lastActivity: String = "Idle"
 
-    @Published var port: Int
-    @Published var additionalListeners: [ListenerConfig] = []
-    @Published var autoRestartEnabled = true
+    @Published var port: Int { didSet { saveLastSettings() } }
+    @Published var additionalListeners: [ListenerConfig] = [] { didSet { saveLastSettings() } }
+    @Published var autoRestartEnabled = true { didSet { saveLastSettings() } }
+    /// Opt-in RFC 1929 SOCKS5 auth requirement — empty (the default) means
+    /// no-auth only, identical to this project's original behavior. Both
+    /// must be non-empty for auth to actually be required (see `accept(_:mode:)`).
+    @Published var requiredUsername: String = "" { didSet { saveLastSettings() } }
+    @Published var requiredPassword: String = "" { didSet { saveLastSettings() } }
 
     /// The address shown/used everywhere in the UI (Dashboard, QR code, How
     /// To guide) — single source of truth so every screen always agrees on
@@ -30,6 +37,30 @@ final class ProxyServer: ObservableObject {
 
     let history = ConnectionHistory()
     let usageHistory = UsageHistory()
+    let dailyUsage = DailyUsageTracker()
+
+    /// Set by `DashboardView` from its `PurchaseManager`/`TrialManager` —
+    /// kept as a closure rather than a hard dependency so `ProxyServer`
+    /// doesn't need to know anything about StoreKit or trial tracking.
+    /// True for a Pro purchase OR an active free trial; either bypasses
+    /// `dailyUsage`'s cap entirely.
+    var bypassesDailyCap: () -> Bool = { false }
+
+    // MARK: - Remote-controlled reliability/safety settings
+    // All set by `RemoteConfigManager`; each defaults to today's exact
+    // behavior so an unreachable/not-yet-published config changes nothing.
+
+    /// Global kill switch — when this returns `false`, `start()` refuses to
+    /// start (and a live `RemoteConfigManager` fetch calls `stop()` directly
+    /// if already running). For an emergency/legal takedown without an app
+    /// update.
+    var relayEnabled: () -> Bool = { true }
+    @Published var maxRestartAttempts = 5
+    @Published var restartWindow: TimeInterval = 60
+    /// `0` means unlimited (today's behavior) — no cap existed before this.
+    @Published var maxConcurrentTunnels = 0
+    @Published var outboundRetryAttempts = 3
+    @Published var outboundRetryBaseSeconds: Double = 1
 
     // Dedicated to the listener/accept loop only — tunnel I/O never runs here, so
     // accepting new connections is never delayed behind another tunnel's traffic.
@@ -51,20 +82,103 @@ final class ProxyServer: ObservableObject {
     private var nextTunnelID = 0
     private var userRequestedStop = false
     private var addressTimer: Timer?
+    private var lastRateSample: (up: UInt64, down: UInt64, at: Date)?
+    private var loadingLastSettings = false
 
     /// Restart bookkeeping, keyed by port (unique among concurrently running
     /// listeners) since a listener has no other stable identity once started.
     private struct RestartState { var attempts = 0; var windowStart = Date() }
     private var restartState: [Int: RestartState] = [:]
-    private static let maxRestartAttempts = 5
-    private static let restartWindow: TimeInterval = 60
+
+    private static let lastSettingsKey = "server.lastSettings"
+    private struct LastSettings: Codable {
+        var port: Int
+        var additionalListeners: [ListenerConfig]
+        var autoRestartEnabled: Bool
+        var requiredUsername: String
+        var requiredPassword: String
+
+        // Both init(from:) and encode(to:) below are hand-written, so Swift
+        // no longer auto-synthesizes this either — must be explicit.
+        private enum CodingKeys: String, CodingKey {
+            case port, additionalListeners, autoRestartEnabled, requiredUsername, requiredPassword
+        }
+
+        init(port: Int, additionalListeners: [ListenerConfig], autoRestartEnabled: Bool,
+             requiredUsername: String = "", requiredPassword: String = "") {
+            self.port = port
+            self.additionalListeners = additionalListeners
+            self.autoRestartEnabled = autoRestartEnabled
+            self.requiredUsername = requiredUsername
+            self.requiredPassword = requiredPassword
+        }
+
+        // Custom decode so settings saved before `requiredUsername`/
+        // `requiredPassword` existed (missing keys) still decode successfully
+        // instead of failing the whole blob and silently reverting port/
+        // listeners/auto-restart to defaults too.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            port = try container.decode(Int.self, forKey: .port)
+            additionalListeners = try container.decode([ListenerConfig].self, forKey: .additionalListeners)
+            autoRestartEnabled = try container.decode(Bool.self, forKey: .autoRestartEnabled)
+            requiredUsername = try container.decodeIfPresent(String.self, forKey: .requiredUsername) ?? ""
+            requiredPassword = try container.decodeIfPresent(String.self, forKey: .requiredPassword) ?? ""
+        }
+
+        // A custom init(from:) in the primary declaration disables Swift's
+        // automatic synthesis of encode(to:) too, so this must be explicit.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(port, forKey: .port)
+            try container.encode(additionalListeners, forKey: .additionalListeners)
+            try container.encode(autoRestartEnabled, forKey: .autoRestartEnabled)
+            try container.encode(requiredUsername, forKey: .requiredUsername)
+            try container.encode(requiredPassword, forKey: .requiredPassword)
+        }
+    }
 
     init(port: Int = 8080) {
         self.port = port
         NetworkDiagnostics.shared.openTunnelCount = { [weak self] in self?.openTunnelCount() ?? 0 }
+        loadLastSettings()
         refreshAddresses()
         addressTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             self?.refreshAddresses()
+        }
+    }
+
+    // MARK: - Last-used settings (relaunch persistence, not anti-abuse —
+    // plain UserDefaults, unlike the Keychain-backed trial/usage trackers)
+
+    /// Loads the last-used port/listeners/auto-restart, if any were saved.
+    /// Runs before `didSet` observers matter (still inside `init()`, where
+    /// Swift doesn't fire property observers for a type's own initial
+    /// assignments), so this never immediately re-triggers a save.
+    private func loadLastSettings() {
+        guard let data = UserDefaults.standard.data(forKey: Self.lastSettingsKey) else {
+            DebugLog.important("server", "loadLastSettings: no data found for key \(Self.lastSettingsKey)")
+            return
+        }
+        guard let saved = try? JSONDecoder().decode(LastSettings.self, from: data) else {
+            DebugLog.important("server", "loadLastSettings: decode FAILED, raw=\(String(data: data, encoding: .utf8) ?? "?")")
+            return
+        }
+        DebugLog.important("server", "loadLastSettings: decoded port=\(saved.port) autoRestart=\(saved.autoRestartEnabled) listeners=\(saved.additionalListeners.count) — applying now (current port=\(port))")
+        port = saved.port
+        additionalListeners = saved.additionalListeners
+        autoRestartEnabled = saved.autoRestartEnabled
+        requiredUsername = saved.requiredUsername
+        requiredPassword = saved.requiredPassword
+        DebugLog.important("server", "loadLastSettings: applied — port is now \(port)")
+    }
+
+    private func saveLastSettings() {
+        let settings = LastSettings(port: port, additionalListeners: additionalListeners, autoRestartEnabled: autoRestartEnabled,
+                                     requiredUsername: requiredUsername, requiredPassword: requiredPassword)
+        DebugLog.important("server", "saveLastSettings: writing port=\(port) autoRestart=\(autoRestartEnabled) listeners=\(additionalListeners.count)")
+        if let data = try? JSONEncoder().encode(settings) {
+            UserDefaults.standard.set(data, forKey: Self.lastSettingsKey)
         }
     }
 
@@ -90,6 +204,11 @@ final class ProxyServer: ObservableObject {
 
     func start() {
         guard !isRunning else { return }
+        guard relayEnabled() else {
+            DebugLog.important("listener", "start refused — relay disabled remotely")
+            lastError = "This service is temporarily unavailable. Please try again later."
+            return
+        }
         userRequestedStop = false
         listenerQueue.async { [self] in
             if self.isStarting { return }
@@ -141,6 +260,19 @@ final class ProxyServer: ObservableObject {
         activeConnections = 0
         bytesUp = 0
         bytesDown = 0
+        rateUp = 0
+        rateDown = 0
+        lastRateSample = nil
+    }
+
+    /// Called by `RemoteConfigManager` when `relayEnabled` flips to `false`
+    /// while the proxy is already running — stops it immediately rather
+    /// than waiting for the user to notice.
+    func stopIfDisallowed() {
+        guard isRunning, !relayEnabled() else { return }
+        DebugLog.important("listener", "stopping — relay disabled remotely while running")
+        lastError = "This service is temporarily unavailable. Please try again later."
+        stop()
     }
 
     // MARK: - Listener lifecycle
@@ -225,17 +357,17 @@ final class ProxyServer: ObservableObject {
     private func maybeAutoRestart(port: Int, mode: ListenerMode, isPrimary: Bool, isConflict: Bool) {
         guard autoRestartEnabled, !userRequestedStop, !isConflict else { return }
         var state = restartState[port] ?? RestartState()
-        if Date().timeIntervalSince(state.windowStart) > Self.restartWindow {
+        if Date().timeIntervalSince(state.windowStart) > restartWindow {
             state = RestartState()
         }
-        guard state.attempts < Self.maxRestartAttempts else {
-            DebugLog.important("listener", "port \(port) exceeded \(Self.maxRestartAttempts) restart attempts within \(Int(Self.restartWindow))s, giving up")
+        guard state.attempts < maxRestartAttempts else {
+            DebugLog.important("listener", "port \(port) exceeded \(maxRestartAttempts) restart attempts within \(Int(restartWindow))s, giving up")
             return
         }
         state.attempts += 1
         restartState[port] = state
         let delay = 2.0
-        DebugLog.important("listener", "auto-restarting port \(port) in \(delay)s (attempt \(state.attempts) of \(Self.maxRestartAttempts))")
+        DebugLog.important("listener", "auto-restarting port \(port) in \(delay)s (attempt \(state.attempts) of \(maxRestartAttempts))")
         listenerQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self, !self.userRequestedStop else { return }
             self.startOneListener(port: port, mode: mode, isPrimary: isPrimary)
@@ -249,6 +381,21 @@ final class ProxyServer: ObservableObject {
             connection.cancel()
             return
         }
+        // Free-tier daily cap: refuse *new* connections once today's total is
+        // hit; already-open tunnels are left to finish rather than cut mid-
+        // transfer. Pro users bypass this entirely.
+        guard bypassesDailyCap() || !dailyUsage.isOverLimit else {
+            DebugLog.important("listener", "refused connection — daily free-tier cap reached")
+            connection.cancel()
+            return
+        }
+        // Remote-configurable concurrency ceiling — `0` (default) means
+        // unlimited, same as the original no-cap design.
+        if maxConcurrentTunnels > 0 && openTunnelCount() >= maxConcurrentTunnels {
+            DebugLog.important("listener", "refused connection — at max concurrent tunnels (\(maxConcurrentTunnels))")
+            connection.cancel()
+            return
+        }
         // Each tunnel gets its own dedicated serial queue instead of sharing one
         // global queue across every connection, so concurrent tunnels can't stall
         // each other or the accept loop. Ordering within a tunnel is preserved.
@@ -257,8 +404,12 @@ final class ProxyServer: ObservableObject {
         let tunnelQueue = DispatchQueue(label: "localproxy.tunnel.\(id)", qos: .userInitiated)
         let deviceStats = devices.stats(forDevice: deviceKey, parent: stats)
         let rateLimiter = devices.rateLimiter(forDevice: deviceKey)
+        let credentials: (username: String, password: String)? =
+            (requiredUsername.isEmpty || requiredPassword.isEmpty) ? nil : (requiredUsername, requiredPassword)
         let tunnel = Tunnel(id: id, client: connection, queue: tunnelQueue, stats: deviceStats,
-                             transport: outboundTransport, forcedProtocol: mode, rateLimiter: rateLimiter)
+                             transport: outboundTransport, forcedProtocol: mode, rateLimiter: rateLimiter,
+                             retryAttempts: outboundRetryAttempts, retryBaseSeconds: outboundRetryBaseSeconds,
+                             requiredCredentials: credentials)
         tunnel.openTunnelCount = { [weak self] in self?.openTunnelCount() ?? 0 }
         track(tunnel)
         tunnel.onClose = { [weak self, weak tunnel] in
@@ -299,8 +450,6 @@ final class ProxyServer: ObservableObject {
         for tunnel in snapshot { tunnel.cancel() }
     }
 
-    // MARK: - Local-network permission
-
     private enum PermissionResult { case granted, denied, timedOut }
 
     /// Triggers the iOS local-network consent prompt via a Bonjour browse (the
@@ -339,13 +488,30 @@ final class ProxyServer: ObservableObject {
 
     private func startRefreshing() {
         refreshTimer?.invalidate()
+        lastRateSample = nil
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.activeConnections = self.stats.activeConnections
             self.bytesUp = self.stats.bytesUp
             self.bytesDown = self.stats.bytesDown
+            self.updateRates()
             self.devices.refresh()
         }
+    }
+
+    /// Owned by this class's own `refreshTimer` rather than a View-level
+    /// `Timer.publish` — a per-View timer gets torn down and recreated every
+    /// time SwiftUI reconstructs that View (which happens on every one of
+    /// this class's `@Published` updates), so it can end up never actually
+    /// firing if reconstructions happen faster than the timer's own period.
+    private func updateRates() {
+        let now = Date()
+        defer { lastRateSample = (bytesUp, bytesDown, now) }
+        guard let last = lastRateSample else { return }
+        let elapsed = now.timeIntervalSince(last.at)
+        guard elapsed > 0 else { return }
+        rateUp = bytesUp >= last.up ? Double(bytesUp - last.up) / elapsed : 0
+        rateDown = bytesDown >= last.down ? Double(bytesDown - last.down) / elapsed : 0
     }
 
     /// App-level aggregate throughput, once/sec on `listenerQueue` — deliberately
@@ -378,6 +544,7 @@ final class ProxyServer: ObservableObject {
         lastLoggedBytesUp = up
         lastLoggedBytesDown = down
         DebugLog.debug("throughput", "app bytes/s tunnels=\(tunnels) up=\(deltaUp) down=\(deltaDown) | totals up=\(up) down=\(down)")
+        DispatchQueue.main.async { self.dailyUsage.add(deltaUp &+ deltaDown) }
     }
 
     /// Feeds the "Historical usage" graph — a slower-cadence, UI-facing

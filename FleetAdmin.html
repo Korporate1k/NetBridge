@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetBridge Fleet Admin</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --text: #1c1c1e;
+    --text-secondary: #6e6e73;
+    --border: #d2d2d7;
+    --accent: #0071e3;
+    --danger: #d70015;
+    --success: #1a7f37;
+    --input-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --card: #1c1c1e;
+      --text: #f5f5f7;
+      --text-secondary: #98989d;
+      --border: #38383a;
+      --accent: #0a84ff;
+      --danger: #ff453a;
+      --success: #32d74b;
+      --input-bg: #2c2c2e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin: 0 0 14px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row label { font-size: 14px; flex: 1; }
+  .row .hint { display: block; font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  input[type="text"], input[type="number"], input[type="date"] {
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 14px;
+    width: 160px;
+  }
+  input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  button.danger { background: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .actions { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+  #status {
+    font-size: 14px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  #status.success { display: block; background: rgba(50, 215, 75, 0.15); color: var(--success); }
+  #status.error { display: block; background: rgba(255, 69, 58, 0.15); color: var(--danger); }
+  #status.info { display: block; background: rgba(10, 132, 255, 0.12); color: var(--accent); }
+  #tokenGate {
+    max-width: 480px;
+    margin: 80px auto;
+    text-align: center;
+  }
+  #tokenGate input { width: 100%; margin: 12px 0; }
+  .footer-note { font-size: 12px; color: var(--text-secondary); text-align: center; margin-top: 24px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="tokenGate">
+    <h1>NetBridge Fleet Admin</h1>
+    <p class="subtitle">Enter a GitHub <strong>classic</strong> Personal Access Token with the <code>gist</code> scope to manage the remote config.</p>
+    <input type="text" id="tokenInput" placeholder="ghp_...">
+    <button onclick="saveToken()">Connect</button>
+    <p id="tokenStatus" style="color:var(--danger);font-size:13px;font-weight:600;"></p>
+    <p class="footer-note">
+      Must be a <strong>classic</strong> token — fine-grained tokens don't support the Gists API at all and will 403.
+      Create one at <a href="https://github.com/settings/tokens/new?scopes=gist&description=NetBridge%20Fleet%20Admin" target="_blank">this pre-filled link</a>
+      (scope is pre-checked; just set an expiration and click Generate), then paste it above.
+      Stored only in this browser's local storage — never sent anywhere but GitHub's API.
+    </p>
+  </div>
+
+  <div id="app" style="display:none">
+    <h1>NetBridge Fleet Admin</h1>
+    <p class="subtitle">Editing <a href="https://gist.github.com/Korporate1k/92817bcaa07f1fb621a903919d1574a9" target="_blank">the live remote config Gist</a> — changes take effect on every app's next launch, no update needed.</p>
+
+    <div id="status"></div>
+
+    <div class="actions">
+      <button onclick="loadConfig()">Reload from GitHub</button>
+      <button onclick="saveConfig()" id="saveBtn">Save Changes</button>
+      <button class="secondary" onclick="clearToken()">Disconnect</button>
+    </div>
+
+    <div class="card">
+      <h2>Kill Switches</h2>
+      <div class="row"><label>Relay Enabled<span class="hint">Master switch — off stops the proxy fleet-wide immediately</span></label><input type="checkbox" id="relayEnabled"></div>
+    </div>
+
+    <div class="card">
+      <h2>Monetization</h2>
+      <div class="row"><label>Paywall Enabled</label><input type="checkbox" id="paywallEnabled"></div>
+      <div class="row"><label>Daily Free Cap (GB)</label><input type="number" id="dailyCapGB" step="0.1" min="0"></div>
+      <div class="row"><label>Bandwidth Presets (Mbps)<span class="hint">Comma-separated, e.g. 1, 5, 10</span></label><input type="text" id="bandwidthPresetsMbps"></div>
+    </div>
+
+    <div class="card">
+      <h2>Trial Management</h2>
+      <div class="row"><label>Trial Enabled for New Installs</label><input type="checkbox" id="trialEnabled"></div>
+      <div class="row"><label>Trial Duration (hours)</label><input type="number" id="trialDurationHours" min="0"></div>
+      <div class="row"><label>Trial End Date (ceiling)<span class="hint">Optional hard cutoff, combines with duration</span></label><input type="date" id="trialEndDate"></div>
+      <div class="row"><label>Force-End All Trials Now</label><input type="checkbox" id="trialForceEndAll"></div>
+      <div class="row"><label>Bonus Campaign Active</label><input type="checkbox" id="bonusActive"></div>
+      <div class="row"><label>Bonus Days</label><input type="number" id="bonusDays" min="0"></div>
+      <div class="row"><label>Campaign ID<span class="hint">Change this to re-run a bonus for everyone</span></label><input type="text" id="campaignID"></div>
+    </div>
+
+    <div class="card">
+      <h2>Reliability Tuning</h2>
+      <div class="row"><label>Max Restart Attempts</label><input type="number" id="maxRestartAttempts" min="0"></div>
+      <div class="row"><label>Restart Window (seconds)</label><input type="number" id="restartWindowSeconds" min="0"></div>
+      <div class="row"><label>Max Concurrent Tunnels<span class="hint">0 = unlimited</span></label><input type="number" id="maxConcurrentTunnels" min="0"></div>
+      <div class="row"><label>Outbound Retry Attempts</label><input type="number" id="outboundRetryAttempts" min="0"></div>
+      <div class="row"><label>Outbound Retry Base (seconds)</label><input type="number" id="outboundRetryBaseSeconds" step="0.1" min="0"></div>
+    </div>
+
+    <div class="card">
+      <h2>DNS-over-HTTPS</h2>
+      <div class="row"><label>Default Upstream URL</label><input type="text" id="doHDefaultUpstreamURL" style="width:260px"></div>
+      <div class="row"><label>Timeout (seconds)</label><input type="number" id="doHTimeoutSeconds" step="0.5" min="0"></div>
+    </div>
+
+    <div class="card">
+      <h2>History Limits</h2>
+      <div class="row"><label>Connection History Limit</label><input type="number" id="connectionHistoryLimit" min="1"></div>
+      <div class="row"><label>Usage Graph Sample Capacity</label><input type="number" id="usageHistoryCapacity" min="1"></div>
+    </div>
+
+    <div class="card">
+      <h2>Feature Visibility</h2>
+      <div class="row"><label>Show QR Code</label><input type="checkbox" id="showQRCode"></div>
+      <div class="row"><label>Show SOCKS5 Tester</label><input type="checkbox" id="showSocks5Tester"></div>
+      <div class="row"><label>Show Upload Throughput Test</label><input type="checkbox" id="showUploadTest"></div>
+      <div class="row"><label>Show Profiles</label><input type="checkbox" id="showProfiles"></div>
+      <div class="row"><label>Show Additional Listeners</label><input type="checkbox" id="showAdditionalListeners"></div>
+      <div class="row"><label>Show Device Bandwidth Controls</label><input type="checkbox" id="showDeviceBandwidthControls"></div>
+      <div class="row"><label>Auto-Restart Enabled<span class="hint">Listener auto-restart on unexpected drop</span></label><input type="checkbox" id="autoRestartEnabled"></div>
+      <div class="row"><label>DoH Enabled<span class="hint">Circuit-breaker for the DNS-over-HTTPS resolver</span></label><input type="checkbox" id="doHEnabled"></div>
+      <div class="row"><label>Background Keep-Alive Enabled<span class="hint">Location-based background keep-alive trick</span></label><input type="checkbox" id="backgroundKeepAliveEnabled"></div>
+    </div>
+
+    <div class="card">
+      <h2>App Lifecycle</h2>
+      <div class="row"><label>Minimum Supported Version<span class="hint">Empty = no gate. e.g. 1.2</span></label><input type="text" id="minSupportedVersion" style="width:100px"></div>
+      <div class="row"><label>Announcement Active</label><input type="checkbox" id="announcementActive"></div>
+      <div class="row"><label>Announcement Message</label><input type="text" id="announcementMessage" style="width:260px"></div>
+    </div>
+
+    <div class="actions">
+      <button onclick="saveConfig()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const GIST_ID = "92817bcaa07f1fb621a903919d1574a9";
+const FILENAME = "localproxy-config.json";
+const TOKEN_KEY = "netbridge_fleet_admin_gh_token";
+
+const BOOL_FIELDS = ["relayEnabled","autoRestartEnabled","doHEnabled","backgroundKeepAliveEnabled",
+  "paywallEnabled","trialEnabled","trialForceEndAll","bonusActive",
+  "showQRCode","showSocks5Tester","showUploadTest","showProfiles","showAdditionalListeners","showDeviceBandwidthControls",
+  "announcementActive"];
+const NUMBER_FIELDS = ["dailyCapGB","trialDurationHours","bonusDays","maxRestartAttempts","restartWindowSeconds",
+  "maxConcurrentTunnels","outboundRetryAttempts","outboundRetryBaseSeconds","doHTimeoutSeconds",
+  "connectionHistoryLimit","usageHistoryCapacity"];
+const STRING_FIELDS = ["campaignID","doHDefaultUpstreamURL","minSupportedVersion","announcementMessage"];
+
+function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
+
+function saveToken() {
+  const t = document.getElementById("tokenInput").value.trim();
+  if (!t) return;
+  document.getElementById("tokenStatus").textContent = "";
+  localStorage.setItem(TOKEN_KEY, t);
+  document.getElementById("tokenGate").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  loadConfig();
+}
+
+function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+  document.getElementById("app").style.display = "none";
+  document.getElementById("tokenGate").style.display = "block";
+}
+
+function showStatus(message, kind) {
+  const el = document.getElementById("status");
+  el.textContent = message;
+  el.className = kind;
+}
+
+async function loadConfig() {
+  showStatus("Loading current config…", "info");
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { "Authorization": `token ${token()}`, "Accept": "application/vnd.github+json" }
+    });
+    if (res.status === 401 || res.status === 403) {
+      clearToken();
+      document.getElementById("tokenStatus").textContent =
+        `GitHub rejected that token (${res.status}). Common causes: it's a fine-grained token (Gists need a classic token), the "gist" scope wasn't checked, or it's expired/revoked. Enter a new one below.`;
+      return;
+    }
+    if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+    const gist = await res.json();
+    const content = gist.files[FILENAME].content;
+    const config = JSON.parse(content);
+    populateForm(config);
+    showStatus("Loaded current config.", "success");
+  } catch (err) {
+    showStatus(`Failed to load: ${err.message}`, "error");
+  }
+}
+
+function populateForm(config) {
+  for (const key of BOOL_FIELDS) {
+    const el = document.getElementById(key);
+    if (el && key in config) el.checked = !!config[key];
+  }
+  for (const key of NUMBER_FIELDS) {
+    const el = document.getElementById(key);
+    if (el && key in config) el.value = config[key];
+  }
+  for (const key of STRING_FIELDS) {
+    const el = document.getElementById(key);
+    if (el && key in config) el.value = config[key];
+  }
+  document.getElementById("bandwidthPresetsMbps").value = (config.bandwidthPresetsMbps || []).join(", ");
+  document.getElementById("trialEndDate").value = config.trialEndDate || "";
+}
+
+function readForm() {
+  const config = {};
+  for (const key of BOOL_FIELDS) config[key] = document.getElementById(key).checked;
+  for (const key of NUMBER_FIELDS) {
+    const raw = document.getElementById(key).value;
+    const n = raw === "" ? 0 : Number(raw);
+    config[key] = Number.isFinite(n) ? n : 0;
+  }
+  for (const key of STRING_FIELDS) config[key] = document.getElementById(key).value;
+  config.bandwidthPresetsMbps = document.getElementById("bandwidthPresetsMbps").value
+    .split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+  config.trialEndDate = document.getElementById("trialEndDate").value || "";
+  return config;
+}
+
+async function saveConfig() {
+  const config = readForm();
+  showStatus("Saving…", "info");
+  document.getElementById("saveBtn").disabled = true;
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `token ${token()}`,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ files: { [FILENAME]: { content: JSON.stringify(config, null, 2) } } })
+    });
+    if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+    showStatus("Saved — every app picks this up on its next launch.", "success");
+  } catch (err) {
+    showStatus(`Failed to save: ${err.message}`, "error");
+  } finally {
+    document.getElementById("saveBtn").disabled = false;
+  }
+}
+
+// Auto-connect if a token is already stored.
+if (token()) {
+  document.getElementById("tokenGate").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  loadConfig();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "identifier" : "EC1BB73A-1A3C-4A5F-ABD9-B8A162E4C003",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "0F12BE59-B985-41A9-92CE-D10DBD24B9DA",
+      "localizations" : [
+        {
+          "description" : "Removes the 5GB/day free-tier cap, forever.",
+          "displayName" : "LocalProxy Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.Korporate1k.LocalProxy.pro",
+      "referenceName" : "LocalProxy Pro",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

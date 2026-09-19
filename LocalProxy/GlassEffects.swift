@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Centralizes the "modern glass" look so every custom card/button in the
 /// app picks up real Liquid Glass on capable devices without duplicating the
@@ -23,6 +24,21 @@ extension View {
             self.buttonStyle(.glassProminent)
         } else {
             self.buttonStyle(.borderedProminent)
+        }
+    }
+
+    /// Adds a "Done" button in the keyboard's accessory bar, so keyboards
+    /// without a return key (`.numberPad`, `.decimalPad`) can still be
+    /// dismissed. Apply to the `Form` (or other container) hosting such a
+    /// field.
+    func keyboardDoneButton() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            }
         }
     }
 }

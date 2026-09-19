@@ -1,0 +1,4 @@
+module tun2proxy {
+    header "tun2proxy.h"
+    export *
+}

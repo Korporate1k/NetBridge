@@ -17,14 +17,23 @@ enum QRCode {
     }
 }
 
+/// Shows *this device's own* proxy server as a plain `ip:port` QR code — the
+/// format `ClientConfiguration(uriString:)` (and so the Client tab's scanner)
+/// accepts. Used by both the Dashboard and the Client tab. Observes the server
+/// directly so the code tracks address/port changes while open, and never
+/// encodes a placeholder when no IPv4 address is known yet.
 struct QRCodeSheet: View {
-    let address: String
+    @ObservedObject var server: ProxyServer
     @Environment(\.dismiss) private var dismiss
+
+    private var address: String? {
+        server.localIP.map { "\($0):\(server.port)" }
+    }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                if let image = QRCode.image(for: address) {
+                if let address, let image = QRCode.image(for: address) {
                     Image(uiImage: image)
                         .interpolation(.none)
                         .resizable()
@@ -33,13 +42,19 @@ struct QRCodeSheet: View {
                         .padding(20)
                         .background(Color.white)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else if address == nil {
+                    Text("No network address yet — connect to Wi-Fi or turn on Personal Hotspot.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
                 } else {
                     Text("Couldn't generate a QR code.")
                         .foregroundColor(.secondary)
                 }
-                Text(address)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.secondary)
+                if let address {
+                    Text(address)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
             }
             .padding(24)
             .glassCard(cornerRadius: 24)

@@ -23,6 +23,11 @@ public enum Socks5ClientError: Error {
     // No-auth specifically rejected (the only method this client offers).
     case noAcceptableAuthMethod
 
+    // RFC 1929 username/password authentication failures.
+    case authenticationFailed(status: UInt8)
+    case malformedAuthReply
+    case credentialTooLong(String)
+
     // One case per RFC 1928 REP code.
     case generalFailure
     case connectionNotAllowedByRuleset
@@ -62,6 +67,9 @@ extension Socks5ClientError: CustomStringConvertible {
         case .malformedUDPDatagram: return "malformed UDP datagram"
         case .unexpectedProtocolVersion(let version): return "unexpected protocol version \(version)"
         case .noAcceptableAuthMethod: return "server rejected no-auth"
+        case .authenticationFailed(let status): return "authentication failed (status \(status))"
+        case .malformedAuthReply: return "malformed authentication reply"
+        case .credentialTooLong(let reason): return "credential too long: \(reason)"
         case .generalFailure: return "general SOCKS server failure"
         case .connectionNotAllowedByRuleset: return "connection not allowed by ruleset"
         case .networkUnreachable: return "network unreachable"

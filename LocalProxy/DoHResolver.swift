@@ -14,19 +14,30 @@ final class DoHResolver {
     private var cache: [String: CacheEntry] = [:]
     private let session: URLSession
 
+    /// Remote-controlled settings, applied by `RemoteConfigManager`. A
+    /// remote `doHEnabled: false` is a hard circuit-breaker on top of the
+    /// user's own local `doh.enabled` toggle — both must allow it.
+    private var remoteEnabled = true
+    private var remoteDefaultUpstreamURL = "https://cloudflare-dns.com/dns-query"
+    private var timeoutSeconds: Double = 4
+
     private init() {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 4
-        session = URLSession(configuration: config)
+        session = URLSession(configuration: .ephemeral)
+    }
+
+    func applyRemoteSettings(enabled: Bool, defaultUpstreamURL: String, timeoutSeconds: Double) {
+        remoteEnabled = enabled
+        if !defaultUpstreamURL.isEmpty { remoteDefaultUpstreamURL = defaultUpstreamURL }
+        if timeoutSeconds > 0 { self.timeoutSeconds = timeoutSeconds }
     }
 
     var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "doh.enabled")
+        remoteEnabled && UserDefaults.standard.bool(forKey: "doh.enabled")
     }
 
     private var upstreamURL: URL? {
         let stored = UserDefaults.standard.string(forKey: "doh.upstreamURL")
-        let text = (stored?.isEmpty == false) ? stored! : "https://cloudflare-dns.com/dns-query"
+        let text = (stored?.isEmpty == false) ? stored! : remoteDefaultUpstreamURL
         return URL(string: text)
     }
 
@@ -54,6 +65,7 @@ final class DoHResolver {
         var request = URLRequest(url: upstream)
         request.httpMethod = "POST"
         request.httpBody = query
+        request.timeoutInterval = timeoutSeconds
         request.setValue("application/dns-message", forHTTPHeaderField: "Content-Type")
         request.setValue("application/dns-message", forHTTPHeaderField: "Accept")
 

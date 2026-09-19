@@ -43,7 +43,7 @@ final class DebugLog {
         formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm:ss.SSS"
-        _verbose = UserDefaults.standard.object(forKey: Self.verboseKey) as? Bool ?? true
+        _verbose = UserDefaults.standard.object(forKey: Self.verboseKey) as? Bool ?? false
         _trace = UserDefaults.standard.bool(forKey: Self.traceKey)
         // Launch rotation must not touch LogMirror: it would re-enter DebugLog.shared
         // while this initializer is still running.
@@ -292,7 +292,8 @@ final class LogMirror {
 
     /// Resolves the saved folder (if any) and starts the periodic copy. Call once at launch.
     func start() {
-        queue.async {
+        queue.async { [weak self] in
+            guard let self else { return }
             if let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) {
                 var stale = false
                 do {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DevicesView: View {
     @ObservedObject var registry: DeviceRegistry
+    @ObservedObject var history: ConnectionHistory
     @State private var confirmReset = false
 
     var body: some View {
@@ -25,6 +26,14 @@ struct DevicesView: View {
                         Text("\(registry.connectedCount) connected · \(registry.devices.count) seen")
                     } footer: {
                         limitsFooter
+                    }
+                }
+
+                Section("Activity") {
+                    NavigationLink {
+                        ConnectionHistoryListView(history: history)
+                    } label: {
+                        Label("Recent Connections", systemImage: "magnifyingglass")
                     }
                 }
             }
@@ -125,12 +134,20 @@ private struct ShareBar: View {
     }
 }
 
-private enum BandwidthPreset: Hashable {
+enum BandwidthPreset: Hashable {
     case unlimited
     case preset(UInt64) // bytes per second
     case custom
 
-    static let presets: [UInt64] = [125_000, 625_000, 1_250_000] // 1 / 5 / 10 Mbps
+    /// Set by `RemoteConfigManager` from `bandwidthPresetsMbps` — the
+    /// picker options shown in `DeviceDetailView` below.
+    static var presets: [UInt64] = [125_000, 625_000, 1_250_000] // 1 / 5 / 10 Mbps
+
+    static func configurePresets(mbpsValues: [Int]) {
+        let bytesPerSecond = mbpsValues.filter { $0 > 0 }.map { UInt64($0) * 125_000 }
+        guard !bytesPerSecond.isEmpty else { return }
+        presets = bytesPerSecond
+    }
 
     init(capBytesPerSecond: UInt64?) {
         guard let cap = capBytesPerSecond else { self = .unlimited; return }
@@ -180,6 +197,7 @@ struct DeviceDetailView: View {
                     InfoRow(label: "Last seen", value: formatLastSeen(device.lastSeen))
                 }
 
+                if DeviceBandwidthControlsConfig.enabled {
                 Section {
                     Toggle("Block this device", isOn: Binding(
                         get: { device.isBlocked },
@@ -202,9 +220,9 @@ struct DeviceDetailView: View {
                         }
                     )) {
                         Text("Unlimited").tag(BandwidthPreset.unlimited)
-                        Text("1 Mbps").tag(BandwidthPreset.preset(125_000))
-                        Text("5 Mbps").tag(BandwidthPreset.preset(625_000))
-                        Text("10 Mbps").tag(BandwidthPreset.preset(1_250_000))
+                        ForEach(BandwidthPreset.presets, id: \.self) { bytesPerSecond in
+                            Text("\(bytesPerSecond / 125_000) Mbps").tag(BandwidthPreset.preset(bytesPerSecond))
+                        }
                         Text("Custom").tag(BandwidthPreset.custom)
                     }
 
@@ -213,7 +231,7 @@ struct DeviceDetailView: View {
                             TextField("Mbps", text: $customMbpsText)
                                 .keyboardType(.decimalPad)
                                 .onSubmit(applyCustomBandwidth)
-                                .onChange(of: customMbpsText) { _ in applyCustomBandwidth() }
+                                .onChange(of: customMbpsText) { applyCustomBandwidth() }
                             Text("Mbps")
                                 .foregroundColor(.secondary)
                         }
@@ -223,6 +241,7 @@ struct DeviceDetailView: View {
                 } footer: {
                     Text("New connections from a blocked device are refused. A bandwidth limit applies to this device's combined upload and download rate.")
                 }
+                }
 
                 Section {
                     Button("Forget This Device", role: .destructive) { confirmForget = true }
@@ -231,6 +250,7 @@ struct DeviceDetailView: View {
         }
         .navigationTitle(device?.displayName ?? "Device")
         .navigationBarTitleDisplayMode(.inline)
+        .keyboardDoneButton()
         .onAppear {
             guard !loadedName else { return }
             loadedName = true
