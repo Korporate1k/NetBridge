@@ -27,6 +27,9 @@
 		34CA243D305BA0390079CB77 /* Socks5Client in Frameworks */ = {isa = PBXBuildFile; productRef = 11ed79ad4812830d3618a5c9 /* Socks5Client */; };
 		35210a719a9116105303f73e /* TrafficSniffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = b927a4a172141b989786f87f /* TrafficSniffer.swift */; };
 		3bf1c40fccbb98e8cc73e248 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = fc4be6bdf63de7139b3896a2 /* DashboardView.swift */; };
+		6e7cdb9139418b7b3837da5b /* ConnectionHistoryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543360e8c08d5018c71280ee /* ConnectionHistoryListView.swift */; };
+		37d3a1c36e2f15e9116b4f7d /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = b879845095e95372845d43fb /* SettingsView.swift */; };
+		c3cb10d521c880959d553edf /* HomeTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43d1150ce7169c2e69b09eec /* HomeTabView.swift */; };
 		4720ca02baf147cfd107aba7 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04072998f92014f45fd4bdee /* KeychainStore.swift */; };
 		48ca5c4361c3801402829212 /* ListenerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ede2543625401bca2c21a56 /* ListenerConfig.swift */; };
 		4a13f7ac3aad4e5c9ebd97ea /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ff38e5adae6472db26554c2 /* DevicesView.swift */; };
@@ -37,6 +40,9 @@
 		728a74151e753ecf2c3a3e8e /* ProxyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */; };
 		7e885ac28e6b4ae090e1b123 /* Socks5Handler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80cab1e68bad46239046ced0 /* Socks5Handler.swift */; };
 		7f2151c7b91ee847ec494f52 /* ConnectProxyHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */; };
+		456b454ee102497886f6a3fd /* ConnectProxyHandler+Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = d0b8b1e71426fe98820da1cd /* ConnectProxyHandler+Diagnostics.swift */; };
+		7c384136edda4b597f2e3c6a /* ConnectProxyHandler+Relay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346bdde7219c48051ffc71e3 /* ConnectProxyHandler+Relay.swift */; };
+		f56010ec611bdf305d1741c5 /* ConnectProxyHandler+Socks5.swift in Sources */ = {isa = PBXBuildFile; fileRef = cebd2a8543f5c01c1b7cfe6c /* ConnectProxyHandler+Socks5.swift */; };
 		8305f1ac558b154ce4951db2 /* BackgroundKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */; };
 		92e768da8725f7b11c5d2e06 /* ClientConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74957382a5c765fe138622b1 /* ClientConfiguration.swift */; };
 		94f6b92f6e366d321dcc7685 /* GlassEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = e6071b257c4b36557492a0ed /* GlassEffects.swift */; };
@@ -98,6 +104,9 @@
 		39ef43a4b4d7c156f2c554fc /* LocalProxyTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LocalProxyTunnel.entitlements; sourceTree = "<group>"; };
 		40babfa11e8d3feb59284b3c /* LocalProxy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LocalProxy.entitlements; sourceTree = "<group>"; };
 		446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectProxyHandler.swift; sourceTree = "<group>"; };
+		d0b8b1e71426fe98820da1cd /* ConnectProxyHandler+Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectProxyHandler+Diagnostics.swift"; sourceTree = "<group>"; };
+		346bdde7219c48051ffc71e3 /* ConnectProxyHandler+Relay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectProxyHandler+Relay.swift"; sourceTree = "<group>"; };
+		cebd2a8543f5c01c1b7cfe6c /* ConnectProxyHandler+Socks5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectProxyHandler+Socks5.swift"; sourceTree = "<group>"; };
 		5202167d0f78c85c48299801 /* LocalProxyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProxyApp.swift; sourceTree = "<group>"; };
 		530763cba24ada874f01101a /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		562d13b08e384ea99d870d57 /* UploadThroughputTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadThroughputTestView.swift; sourceTree = "<group>"; };
@@ -136,6 +145,9 @@
 		fa107942bc399fcfe1a74e86 /* UpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpgradeView.swift; sourceTree = "<group>"; };
 		fb82de537fd36a102a20e295 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		fc4be6bdf63de7139b3896a2 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		543360e8c08d5018c71280ee /* ConnectionHistoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionHistoryListView.swift; sourceTree = "<group>"; };
+		b879845095e95372845d43fb /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		43d1150ce7169c2e69b09eec /* HomeTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTabView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -182,6 +194,9 @@
 				f3e863de76a46020e8c6106c /* ProxyStats.swift */,
 				b479143169eda996b7fccb52 /* ProxyServer.swift */,
 				446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */,
+				d0b8b1e71426fe98820da1cd /* ConnectProxyHandler+Diagnostics.swift */,
+				346bdde7219c48051ffc71e3 /* ConnectProxyHandler+Relay.swift */,
+				cebd2a8543f5c01c1b7cfe6c /* ConnectProxyHandler+Socks5.swift */,
 				ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */,
 				5ede2543625401bca2c21a56 /* ListenerConfig.swift */,
 				ef094df573c270e7eafe0ea3 /* RateLimiter.swift */,
@@ -202,6 +217,9 @@
 				0c85c9984e54a4769b6c072a /* RemoteConfig.swift */,
 				5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */,
 				fc4be6bdf63de7139b3896a2 /* DashboardView.swift */,
+				543360e8c08d5018c71280ee /* ConnectionHistoryListView.swift */,
+				b879845095e95372845d43fb /* SettingsView.swift */,
+				43d1150ce7169c2e69b09eec /* HomeTabView.swift */,
 				29cdcb3205e1386d5b8762bc /* DebugLog.swift */,
 				e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */,
 				0442604cc7374884814f9d32 /* Frontend.swift */,
@@ -374,6 +392,9 @@
 				5701121baace7fce081ab140 /* ProxyStats.swift in Sources */,
 				e113ccb22d71f86f489cf84d /* ProxyServer.swift in Sources */,
 				7f2151c7b91ee847ec494f52 /* ConnectProxyHandler.swift in Sources */,
+				456b454ee102497886f6a3fd /* ConnectProxyHandler+Diagnostics.swift in Sources */,
+				7c384136edda4b597f2e3c6a /* ConnectProxyHandler+Relay.swift in Sources */,
+				f56010ec611bdf305d1741c5 /* ConnectProxyHandler+Socks5.swift in Sources */,
 				064cc426265a9a05362f9eed /* LocalAddress.swift in Sources */,
 				48ca5c4361c3801402829212 /* ListenerConfig.swift in Sources */,
 				0ff1845e74c35320445d4156 /* RateLimiter.swift in Sources */,
@@ -394,6 +415,9 @@
 				5873db04ff5a58d5136db96e /* RemoteConfig.swift in Sources */,
 				8305f1ac558b154ce4951db2 /* BackgroundKeeper.swift in Sources */,
 				3bf1c40fccbb98e8cc73e248 /* DashboardView.swift in Sources */,
+				6e7cdb9139418b7b3837da5b /* ConnectionHistoryListView.swift in Sources */,
+				37d3a1c36e2f15e9116b4f7d /* SettingsView.swift in Sources */,
+				c3cb10d521c880959d553edf /* HomeTabView.swift in Sources */,
 				6fd6454414e647ddbd878e12 /* DebugLog.swift in Sources */,
 				0567b5c29dbf38c4b16ebfba /* NetworkDiagnostics.swift in Sources */,
 				0c4342f11f794b1780de135f /* Frontend.swift in Sources */,

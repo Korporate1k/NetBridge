@@ -1837,3 +1837,24 @@ lost:** the full pre-revert tree (all Shadowsocks work, QA-pass fixes, docs) is 
   bodies beyond symbols/strings, and anything on a device.
 - **Caveat.** The simulator slice of `libtun2proxy.a` differs slightly from build 2's; the device slice
   (md5 52688f35…) is byte-identical to the 11:39 build used for build 2.
+
+## 2026-09-19 — Repo hygiene + file split (no behavior change)
+
+- **Commit `781c80e`** — the reverted working tree (matches TestFlight build 1.0 (2)) is now committed on `main`. The index had been
+  left stale with pre-revert Shadowsocks-era entries; it was restaged from the working tree. No Shadowsocks files are on `main` (they
+  are on `snapshot/pre-testflight-revert-2026-09-19`). `Personal Access Tokens (Classic).pdf` is in `.gitignore`.
+- **`DashboardView.swift` (1009 lines) split** into `DashboardView.swift` (root + `UpdateRequiredView` + DEBUG `QATraffic`),
+  `HomeTabView.swift` (+ `StatTile`), `SettingsView.swift` (+ `ActivityView`, `FolderPicker`) and `ConnectionHistoryListView.swift`.
+  `HomeTabView` and `SettingsView` lost `private` (used from the root file); nothing else changed.
+- **`ConnectProxyHandler.swift` (800 lines) split** into the core `Tunnel` class (properties, init, start, CONNECT parse) plus
+  `extension Tunnel` files `ConnectProxyHandler+Socks5.swift`, `+Relay.swift` (outbound, pipe/forward, teardown) and
+  `+Diagnostics.swift`. Members referenced across files lost `private` (compiler-enforced; stored properties stay in the class).
+- **Verification.** A sorted line-diff of old vs new files shows only the extension scaffolding, imports and the removed `private`
+  keywords changed. Debug simulator build and Release device build succeed; the app launches on the iPhone 17 Pro simulator with four
+  tabs and the dashboard stat tiles rendering. NOT verified: Settings/Devices screens and proxy traffic after the split (no logic
+  was touched), and nothing on a device.
+- **Not changed, deliberately.** `Socks5ClientTestView` and `UploadThroughputTestView` are user-facing (Client tab, Settings → Tools),
+  so they were not put behind `#if DEBUG`.
+- New files have entries in `project.pbxproj`; names containing `+` must be quoted there.
+
+Unsigned IPA rebuilt after this change: version 1.0 (20260919.135009) at build/Build/Products/Release-iphoneos/LocalProxy.ipa.
