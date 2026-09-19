@@ -369,6 +369,8 @@ private final class EgressSocket {
         }
         var hops = Int32(EgressTTL.hopLimit)
         if family == AF_INET {
+            // Without SO_BROADCAST, sendto() to a broadcast address fails with EACCES.
+            setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, intSize)
             setsockopt(fd, IPPROTO_IP, IP_TTL, &hops, intSize)
         } else {
             setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &hops, intSize)
