@@ -23,13 +23,17 @@ public final class TunnelEngine {
     /// Concurrent TCP+UDP sessions the engine will track (`--max-sessions`; tun2proxy's own default is 200). Past the
     /// cap it silently drops packets of NEW flows ("Too many sessions ... dropping new session"), so the cap is also
     /// what protects the extension's ~50 MB memory limit (iOS kills the whole VPN past it) — raise it only to a
-    /// measured value. Measured on an iPhone 15 Plus, extension memory: ≈3.9 MB baseline; worst case = sessions opened in
-    /// a BURST, ≈43 KB each (900 = 42.5 MB, 700 = 33.9 MB, 500 = 25.3 MB, TCP ≈35 KB); 600 held UDP sessions + a 19 Mbit/s
-    /// stream + 16 bulk TCP streams = 29.9 MB (traffic adds almost nothing). Independently, the engine stopped creating
-    /// sessions at ≈1200 while memory sat at 37 MB — a limit that is not memory. iOS kills the whole VPN extension if it
-    /// exceeds its memory ceiling (≈50 MB documented; never reached in testing, max seen 42.5 MB), which is far worse than
-    /// dropping new flows, so: 800 keeps the worst measured case at ≈38 MB (≈23% margin) and ≈33% below the ≈1200
-    /// session ceiling. 900 also worked in testing but leaves ≈15% margin — change this one constant to use it.
+    /// measured value. Measured on an iPhone 15 Plus, extension memory: ≈3.9 MB baseline; ≈25 KB per idle UDP session and
+    /// ≈47 KB once a session has carried traffic (TCP ≈35 KB): 976 sessions after two rounds of traffic = 45.6 MB (the
+    /// worst case measured), 900 held sessions + a 19 Mbit/s stream + 16 bulk TCP streams = 42.8 MB, 600 = 29.9 MB.
+    /// TWO independent ceilings: (1) memory — iOS kills the whole VPN extension past ≈50 MB (documented; never reached,
+    /// max seen 45.6 MB, so 1000 leaves only ≈9% margin — thin: anything much heavier than the tested worst case is
+    /// close to the line); (2) file descriptors — the extension's RLIMIT_NOFILE soft limit is 2560 and each UDP session
+    /// holds 2 (976 sessions = 1974 fds), so ≈1200 UDP sessions is a hard ceiling that no cap can exceed. Saturation is
+    /// disruptive: the engine checks this cap BEFORE it handles DNS, so once full it drops new flows, including DNS
+    /// lookups, until idle sessions expire (UDP: `defaultUDPTimeoutSeconds`; TCP: 600 s). 1000 was chosen by the owner
+    /// over the more conservative 800 (≈38 MB, ≈23% margin) to make saturation rarer; lower this constant to trade that
+    /// back for memory margin.
     public static let defaultMaxSessions = 1000
     /// Idle time after which a UDP session is torn down (`--udp-timeout`; tun2proxy's default is 10). A new packet
     /// after that opens a NEW session, which the SOCKS5 relay sees as a new association with a new external port,
