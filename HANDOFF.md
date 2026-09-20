@@ -2144,3 +2144,14 @@ Server-side reconciliation (relay phone log, all 546 associations from 172.20.10
 Caveats / NOT verified: `idle` only reached a 60 s gap (the 120 s timeout is untested); 556 "STALL no datagrams for ~3 s" lines on the relay (11 "stall cleared") were not investigated; nothing here measures the iPhone-as-relay fd/memory limits, cap saturation, or cellular-only
 clients; the Mac was concurrently a client of the same relay (~200+ connections). The soak's 20 associations only logged their close summaries ~2 min after the run ended (the 120 s UDP idle timeout) — reading the log too early shows them as open.
 Tools: `livesuite.py` (run with `HOST=<name>`) and `recon.py` are on the throwaway branch `test/udp-load-phone` under scripts/ (they need its QA hooks); never merge that branch.
+
+## 2026-09-20 — `idle` at the shipped 120 s UDP timeout (live topology): timeout verified; the virtual-DNS expiry after session end is now CONFIRMED with relay-side evidence
+
+Run: `idle:0:60:100:115:130` from the 15 Plus through the 17 Pro Max relay (cumulative gaps since the previous probe; Mac whoami server reached by name `172.20.10.3.nip.io`; gate off). Client: replies after 0, 60, 100, 115 s idle with the
+relay port UNCHANGED (one association, T2124, carried all four); after the 130 s gap **NO reply** → scenario FAIL (as designed: it requires every gap to reply). Relay phone's log, timestamped:
+- T2124 opened 02:21:32, last probe ≈02:26:07, **idle-closed 02:28:08 = 120 s after the last activity** (up=12B/4dgrams down=112B/8dgrams, no drops) → the 120 s UDP timeout works as configured.
+- The 130 s probe (02:28:17) created a NEW association T2319 whose first datagram went to **`198.18.0.5:21100`** — the tunnel's fake virtual-DNS address — instead of the hostname, so nothing could answer. This confirms the engine limit documented above
+  (`MAPPING_TIMEOUT` = 60 s in `virtual_dns.rs`, refreshed only at name resolve / new session start): once a flow's session has expired, a socket that keeps sending to the same fake address after the name mapping is >60 s old is forwarded to the raw fake address
+  and lost. Before this, the explanation rested on the source reading plus one earlier failure; the relay now shows the raw 198.18.x address arriving. Flows that stay active, or idle for less than 120 s, are unaffected (115 s passed even though the mapping was >60 s old, because the session was still alive).
+Impact / open: an app that idles >120 s on one UDP socket and then reuses it without re-resolving the name loses that first datagram(s); apps that re-resolve, or protocols that retransmit/migrate (QUIC, most VoIP), recover. Real fix unchanged: patch `MAPPING_TIMEOUT` (or refresh on traffic) in the vendored tun2proxy and rebuild
+the xcframework — NOT done, needs the owner's decision. Server log for this run: 0 errors, 0 warnings.
