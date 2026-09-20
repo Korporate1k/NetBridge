@@ -1,0 +1,94 @@
+diff --git a/src/virtual_dns.rs b/src/virtual_dns.rs
+index 7794d37..69a256a 100644
+--- a/src/virtual_dns.rs
++++ b/src/virtual_dns.rs
+@@ -8,7 +8,16 @@ use std::{
+ };
+ use tproxy_config::IpCidr;
+ 
+-const MAPPING_TIMEOUT: u64 = 60; // Mapping timeout in seconds
++// Local patch 0003. Upstream used 60 s, which is shorter than any sensible UDP session timeout: once a flow's session
++// ended, the next datagram from an app that kept using the fake address created a new session, and if any DNS lookup had
++// purged the expired mapping in between (see find_or_allocate_ip) the packet was forwarded to the raw fake 198.18.x.x
++// address and lost. Mappings now live long enough to outlast every session timeout we configure; MAX_MAPPINGS bounds
++// memory and keeps the address pool from exhausting by evicting the least-recently-used entry instead.
++const MAPPING_TIMEOUT: u64 = 24 * 60 * 60; // Mapping timeout in seconds
++const MAX_MAPPINGS: usize = 8192; // ~1 MB worst case; far above the names a phone resolves in a day
++
++// The mapping must outlive the app's UDP session timeout (120 s) with a wide margin.
++const _: () = assert!(MAPPING_TIMEOUT >= 3600);
+ 
+ struct NameCacheEntry {
+     name: String,
+@@ -126,6 +135,16 @@ impl VirtualDns {
+             return Ok(ip);
+         }
+ 
++        // Bound the cache: with long-lived mappings, evict the least-recently-used entry (even if unexpired) once full.
++        while self.lru_cache.len() >= MAX_MAPPINGS {
++            match self.lru_cache.remove_lru() {
++                Some((_, entry)) => {
++                    self.name_to_ip.remove(&entry.name);
++                }
++                None => break,
++            }
++        }
++
+         // Otherwise, store name and IP pair inside the LRU cache.
+         let started_at = self.next_addr;
+ 
+@@ -148,3 +167,54 @@ impl VirtualDns {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::str::FromStr;
++
++    fn dns() -> VirtualDns {
++        VirtualDns::new(IpCidr::from_str("198.18.0.0/15").unwrap())
++    }
++
++    // Reproduces the field failure: a mapping older than the old 60 s timeout was purged by an unrelated app's DNS lookup,
++    // so a flow that kept using the fake address after its session expired was forwarded to the raw fake address.
++    #[test]
++    fn mapping_survives_past_the_old_60s_timeout_and_an_unrelated_lookup() {
++        let mut d = dns();
++        let ip = d.find_or_allocate_ip("example.com".into()).unwrap();
++        d.lru_cache.get_mut(&ip).unwrap().expiry -= Duration::from_secs(300); // pretend 5 minutes passed
++        let _ = d.find_or_allocate_ip("other.example".into()).unwrap(); // another app's lookup runs the purge pass
++        assert_eq!(d.resolve_ip(&ip).map(String::as_str), Some("example.com"));
++    }
++
++    #[test]
++    fn cache_is_bounded_and_evicts_the_least_recently_used() {
++        let mut d = dns();
++        let first = d.find_or_allocate_ip("name0.example".into()).unwrap();
++        for i in 1..(MAX_MAPPINGS + 10) {
++            d.find_or_allocate_ip(format!("name{i}.example")).unwrap();
++        }
++        assert_eq!(d.lru_cache.len(), MAX_MAPPINGS);
++        assert_eq!(d.name_to_ip.len(), MAX_MAPPINGS);
++        assert!(d.resolve_ip(&first).is_none(), "the oldest entry should have been evicted");
++        let last_name = format!("name{}.example", MAX_MAPPINGS + 9);
++        let last_ip = d.name_to_ip[&last_name];
++        assert_eq!(d.resolve_ip(&last_ip).map(String::as_str), Some(last_name.as_str()));
++    }
++
++    #[test]
++    fn a_recently_used_mapping_is_not_the_one_evicted() {
++        let mut d = dns();
++        let kept = d.find_or_allocate_ip("keep.example".into()).unwrap();
++        for i in 0..(MAX_MAPPINGS - 1) {
++            d.find_or_allocate_ip(format!("n{i}.example")).unwrap();
++        }
++        assert_eq!(d.find_or_allocate_ip("keep.example".into()).unwrap(), kept); // used again -> most recent
++        for i in 0..5 {
++            d.find_or_allocate_ip(format!("late{i}.example")).unwrap();
++        }
++        assert_eq!(d.resolve_ip(&kept).map(String::as_str), Some("keep.example"));
++        assert!(d.name_to_ip.get("n0.example").is_none(), "the least-recently-used name should be gone");
++    }
++}

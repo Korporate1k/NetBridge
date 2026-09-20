@@ -1,0 +1,151 @@
+diff -ru a/src/stream/tcb.rs b/src/stream/tcb.rs
+--- a/src/stream/tcb.rs	2026-09-18 11:05:02
++++ b/src/stream/tcb.rs	2026-09-18 11:05:24
+@@ -60,6 +60,15 @@
+     max_count_for_dup_ack: usize,
+     rto: std::time::Duration,
+     max_retransmit_count: usize,
++    // Bytes handed to the reader via `data_tx` but not yet taken by `poll_read`.
++    // Counted against the advertised receive window so a fast local sender
++    // cannot outrun a slow upstream: without this, received data is ACKed as
++    // soon as it is queued, the window never shrinks, and the unbounded
++    // channel grows with every byte uploaded.
++    pending_read: usize,
++    // Set when an ACK went out advertising less than half the read buffer;
++    // `poll_read` sends a window update once draining reopens it.
++    window_update_needed: std::cell::Cell<bool>,
+ }
+ 
+ impl Tcb {
+@@ -92,6 +101,8 @@
+             max_count_for_dup_ack,
+             rto,
+             max_retransmit_count,
++            pending_read: 0,
++            window_update_needed: std::cell::Cell::new(false),
+         }
+     }
+ 
+@@ -124,7 +135,34 @@
+         self.unordered_packets.insert(seq, buf);
+     }
+     pub(super) fn get_available_read_buffer_size(&self) -> usize {
+-        self.read_buffer_size.saturating_sub(self.get_unordered_packets_total_len())
++        self.read_buffer_size
++            .saturating_sub(self.get_unordered_packets_total_len())
++            .saturating_sub(self.pending_read)
++    }
++    pub(super) fn add_pending_read(&mut self, len: usize) {
++        self.pending_read = self.pending_read.saturating_add(len);
++    }
++    /// Returns true when a window update should be sent to the device now.
++    pub(super) fn consume_pending_read(&mut self, len: usize) -> bool {
++        self.pending_read = self.pending_read.saturating_sub(len);
++        if self.window_update_needed.get() && self.get_available_read_buffer_size() >= self.read_buffer_size / 2 {
++            self.window_update_needed.set(false);
++            return true;
++        }
++        false
++    }
++    /// Window to advertise in an outgoing segment. The old floor of one MTU
++    /// is kept only while nothing is waiting for the reader; under backpressure
++    /// the real (possibly zero) window is advertised so the sender stops.
++    pub(super) fn advertised_window(&self) -> u16 {
++        let win = self.get_recv_window();
++        if self.pending_read == 0 {
++            return win.max(self.mtu);
++        }
++        if (win as usize) < self.read_buffer_size / 2 {
++            self.window_update_needed.set(true);
++        }
++        win
+     }
+     #[inline]
+     pub(crate) fn get_unordered_packets_total_len(&self) -> usize {
+diff -ru a/src/stream/tcp.rs b/src/stream/tcp.rs
+--- a/src/stream/tcp.rs	2026-09-18 11:05:02
++++ b/src/stream/tcp.rs	2026-09-18 11:37:32
+@@ -294,7 +294,9 @@
+         let network_tuple = self.network_tuple();
+ 
+         let state = self.tcb.lock().unwrap().get_state();
+-        if state == TcpState::Closed {
++        // Data the peer sent before closing may still be queued; hand it over
++        // before reporting EOF, or the tail of an upload is silently dropped.
++        if state == TcpState::Closed && self.data_rx.is_empty() {
+             self.shutdown.lock().unwrap().ready();
+             self.write_notify.lock().unwrap().take().map(|w| w.wake_by_ref()).unwrap_or(());
+             return Poll::Ready(Ok(()));
+@@ -322,6 +324,22 @@
+         // read data from channel
+         match self.data_rx.poll_recv(cx) {
+             Poll::Ready(Some(data)) => {
++                {
++                    let nt = self.network_tuple();
++                    let mut tcb = self.tcb.lock().unwrap();
++                    let window_update = tcb.consume_pending_read(data.len());
++                    // In-order data can be left behind (extraction takes at most
++                    // 8KB per incoming segment); pick it up now that there is
++                    // room, rather than waiting for the sender's next segment.
++                    let ack_before = tcb.get_ack();
++                    let res = extract_data_n_write_upstream(&self.up_packet_sender, &mut tcb, nt, &self.data_tx, &self.read_notify);
++                    if res.is_ok() && window_update && tcb.get_ack() == ack_before {
++                        let _ = write_packet_to_device(&self.up_packet_sender, nt, &tcb, None, ACK, None, None);
++                    }
++                    if let Err(e) = res {
++                        log::debug!("{nt} post-read extraction failed: {e}");
++                    }
++                }
+                 let capacity = buf.remaining();
+                 if capacity >= data.len() {
+                     buf.put_slice(&data);
+@@ -703,6 +721,20 @@
+                 tcb.change_state(TcpState::Established);
+             }
+             TcpState::Established => {
++                // A sender that closes right after its last write often puts the
++                // final data on the FIN segment (FIN|PSH|ACK with a payload).
++                // None of the branches below accept that shape, so the data and
++                // FIN were dropped on every retransmit and the stream never
++                // finished. Deliver the data first, then treat the segment as a
++                // bare FIN once everything before it has been consumed; if some
++                // is still pending, ignore the FIN and let the sender retransmit.
++                let mut flags = flags;
++                if flags & FIN == FIN && !payload.is_empty() {
++                    let fin_seq = incoming_seq + len as u32;
++                    tcb.add_unordered_packet(incoming_seq, payload.clone());
++                    extract_data_n_write_upstream(&up_packet_sender, &mut tcb, network_tuple, &data_tx, &read_notify)?;
++                    flags = if tcb.get_ack() == fin_seq { ACK | FIN } else { 0 };
++                }
+                 if flags == ACK {
+                     match pkt_type {
+                         PacketType::WindowUpdate => {
+@@ -818,6 +850,11 @@
+             }
+             TcpState::LastAck if flags & ACK == ACK => {
+                 tcb.change_state(TcpState::Closed);
++                // The reader may be parked on the data channel, which never
++                // closes (the stream holds a sender), so nothing else would wake
++                // it: without this, a peer-initiated close only surfaced as EOF
++                // after the session timeout, and the proxy side never saw a FIN.
++                read_notify.lock().unwrap().take().map(|w| w.wake_by_ref()).unwrap_or(());
+                 tokio::spawn(async move {
+                     if let Err(e) = exit_notifier.send(()).await {
+                         log::debug!("exit_notifier send failed: {e}");
+@@ -916,6 +953,7 @@
+     if let Some(data) = tcb.consume_unordered_packets(8192) {
+         let hint = if state == TcpState::Established { "normally" } else { "still" };
+         log::trace!("{network_tuple} {state:?}: {l_info} {hint} receiving data, len = {}", data.len());
++        tcb.add_pending_read(data.len());
+         data_tx.send(data).map_err(|e| std::io::Error::new(BrokenPipe, e))?;
+         read_notify.lock().unwrap().take().map(|w| w.wake_by_ref()).unwrap_or(());
+         write_packet_to_device(up_packet_sender, network_tuple, tcb, None, ACK, None, None)?;
+@@ -936,7 +974,7 @@
+ ) -> std::io::Result<usize> {
+     use std::io::Error;
+     let seq = seq.unwrap_or(tcb.get_seq()).0;
+-    let (ack, window_size) = (tcb.get_ack().0, tcb.get_recv_window().max(tcb.get_mtu()));
++    let (ack, window_size) = (tcb.get_ack().0, tcb.advertised_window());
+     let (src, dst) = (tuple.dst, tuple.src); // Note: The address is reversed here
+     let calc = |ip_header_len: usize, tcp_header_len: usize| tcb.calculate_payload_max_len(ip_header_len, tcp_header_len);
+     let packet = create_raw_packet(
