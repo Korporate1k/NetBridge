@@ -11,8 +11,9 @@ import Darwin
 /// separately.
 ///
 /// Destination side (full-cone NAT behaviour): all outbound traffic leaves
-/// through ONE unconnected BSD UDP socket per address family (`EgressSocket`),
-/// so the association has a single, stable external `ip:port` regardless of how
+/// through ONE unconnected dual-stack IPv6 BSD UDP socket (`EgressSocket`; IPv4
+/// destinations are addressed as `::ffff:a.b.c.d`) — dual-stack IPv6 on purpose,
+/// see `EgressSocket` — so the association has a single, stable external `ip:port` regardless of how
 /// many destinations the client talks to, and datagrams that arrive on it from
 /// ANY remote address are relayed back to the client, each tagged with its real
 /// source (RFC 1928 §7). That is what DNS servers that answer from a different
@@ -35,8 +36,7 @@ final class UDPRelay {
 
     // MARK: Destination side
 
-    private var egress4: EgressSocket?
-    private var egress6: EgressSocket?
+    private var egress: EgressSocket?
     private var destinationsSeen: Set<String> = []
 
     /// Hostname destinations (ATYP 3) are resolved off-queue with
@@ -75,6 +75,7 @@ final class UDPRelay {
     private var datagramsUp = 0
     private var datagramsDown = 0
     private var sendDrops = 0
+    private var noClientDrops = 0
     private var beatBytesUp: UInt64 = 0
     private var beatBytesDown: UInt64 = 0
     private var lastDataAt = DispatchTime.now()
@@ -223,7 +224,7 @@ final class UDPRelay {
     }
 
     private func send(_ payload: Data, to address: sockaddr_storage, label: String) {
-        guard let egress = egressSocket(for: Int32(address.ss_family)) else {
+        guard let egress = egressSocket() else {
             sendDrops += 1
             return
         }
@@ -242,26 +243,30 @@ final class UDPRelay {
         lastDataAt = DispatchTime.now()
     }
 
-    private func egressSocket(for family: Int32) -> EgressSocket? {
-        if family == AF_INET, let existing = egress4 { return existing }
-        if family == AF_INET6, let existing = egress6 { return existing }
-        guard family == AF_INET || family == AF_INET6 else { return nil }
-        let socket = EgressSocket(family: family, queue: queue) { [weak self] data, host, port in
+    private func egressSocket() -> EgressSocket? {
+        if let existing = egress { return existing }
+        let socket = EgressSocket(queue: queue) { [weak self] data, host, port in
             self?.receivedFromRemote(data, host: host, port: port)
         }
         guard let socket = socket else {
-            DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE could not create \(family == AF_INET ? "IPv4" : "IPv6") egress socket errno=\(errno)")
+            DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE could not create the egress socket errno=\(errno)")
             return nil
         }
-        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE \(family == AF_INET ? "IPv4" : "IPv6") egress socket bound to local port \(socket.localPort)")
-        if family == AF_INET { egress4 = socket } else { egress6 = socket }
+        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE egress socket (dual-stack) bound to local port \(socket.localPort)")
+        egress = socket
         return socket
     }
 
     /// A datagram arrived on an egress socket from `host:port` — any remote,
     /// not only ones the client has sent to (full cone).
     private func receivedFromRemote(_ data: Data, host: String, port: UInt16) {
-        guard !cancelled, !data.isEmpty, let client = clientConnection else { return }
+        guard !cancelled, !data.isEmpty else { return }
+        guard let client = clientConnection else {
+            // Nothing to deliver it to yet (the client is learned from its first datagram). Was silent; now counted.
+            noClientDrops += 1
+            DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE reply from \(host):\(port) (\(data.count)B) arrived before the client was bound — dropped")
+            return
+        }
         stats.addBytesDown(data.count)
         bytesDown += UInt64(data.count)
         datagramsDown += 1
@@ -330,7 +335,7 @@ final class UDPRelay {
         cancelled = true
         heartbeat?.cancel()
         heartbeat = nil
-        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay closed, \(destinationsSeen.count) destination(s) up=\(bytesUp)B/\(datagramsUp)dgrams down=\(bytesDown)B/\(datagramsDown)dgrams sendDrops=\(sendDrops)")
+        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay closed, \(destinationsSeen.count) destination(s) up=\(bytesUp)B/\(datagramsUp)dgrams down=\(bytesDown)B/\(datagramsDown)dgrams sendDrops=\(sendDrops) noClientDrops=\(noClientDrops)")
         if let report = clientTransferReport {
             let tunnelID = id
             report.collect(queue: queue) { report in
@@ -340,10 +345,8 @@ final class UDPRelay {
         }
         listener?.cancel()
         clientConnection?.cancel()
-        egress4?.close()
-        egress6?.close()
-        egress4 = nil
-        egress6 = nil
+        egress?.close()
+        egress = nil
         resolved.removeAll()
         pendingResolution.removeAll()
         pendingSends.removeAll()
@@ -378,24 +381,29 @@ private final class EgressSocket {
     private static let bufferSize = 65536
     private static let maxDatagramsPerWakeup = 64
 
+    /// A single DUAL-STACK IPv6 socket (`IPV6_V6ONLY` off): IPv6 destinations directly, IPv4 destinations as
+    /// `::ffff:a.b.c.d`. It has to be the same family as the client-facing `NWListener`, which is itself a dual-stack
+    /// IPv6 socket. The kernel keeps a separate port table per address family, and an ephemeral IPv6 bind may take a
+    /// port that an IPv4 wildcard socket already holds; IPv4 datagrams for that port then go to the IPv4 socket. With
+    /// separate IPv4 egress sockets that is exactly what happened: one association's client traffic was delivered to
+    /// another association's egress socket and forwarded to a different client as a "reply" (flow dead, data
+    /// cross-delivered; measured at 2-4% of 600 concurrent associations). Two sockets in the same IPv6 table cannot
+    /// be handed the same port.
+    ///
     /// `onDatagram(payload, sourceHost, sourcePort)` runs on `queue`.
-    init?(family: Int32, queue: DispatchQueue, onDatagram: @escaping (Data, String, UInt16) -> Void) {
-        let fd = socket(family, SOCK_DGRAM, 0)
+    init?(queue: DispatchQueue, onDatagram: @escaping (Data, String, UInt16) -> Void) {
+        let fd = socket(AF_INET6, SOCK_DGRAM, 0)
         guard fd >= 0 else { return nil }
 
         var on: Int32 = 1
+        var off: Int32 = 0
         let intSize = socklen_t(MemoryLayout<Int32>.size)
-        if family == AF_INET6 {
-            setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, intSize)
-        }
+        setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, intSize)
+        // Without SO_BROADCAST, sendto() to a broadcast address fails with EACCES.
+        setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, intSize)
         var hops = Int32(EgressTTL.hopLimit)
-        if family == AF_INET {
-            // Without SO_BROADCAST, sendto() to a broadcast address fails with EACCES.
-            setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, intSize)
-            setsockopt(fd, IPPROTO_IP, IP_TTL, &hops, intSize)
-        } else {
-            setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &hops, intSize)
-        }
+        setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &hops, intSize)
+        setsockopt(fd, IPPROTO_IP, IP_TTL, &hops, intSize)   // hop limit for IPv4-mapped destinations
         var bufBytes: Int32 = 1 << 20
         setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufBytes, intSize)
         setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufBytes, intSize)
@@ -403,24 +411,13 @@ private final class EgressSocket {
         _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
 
         var bound = sockaddr_storage()
-        let boundLen: socklen_t
-        if family == AF_INET {
-            withUnsafeMutablePointer(to: &bound) {
-                $0.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
-                    $0.pointee.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-                    $0.pointee.sin_family = sa_family_t(AF_INET)
-                }
+        withUnsafeMutablePointer(to: &bound) {
+            $0.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) {
+                $0.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                $0.pointee.sin6_family = sa_family_t(AF_INET6)
             }
-            boundLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-        } else {
-            withUnsafeMutablePointer(to: &bound) {
-                $0.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) {
-                    $0.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
-                    $0.pointee.sin6_family = sa_family_t(AF_INET6)
-                }
-            }
-            boundLen = socklen_t(MemoryLayout<sockaddr_in6>.size)
         }
+        let boundLen = socklen_t(MemoryLayout<sockaddr_in6>.size)
         let bindResult = withUnsafePointer(to: &bound) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, boundLen) }
         }
@@ -468,7 +465,7 @@ private final class EgressSocket {
     /// Returns 0 on success, otherwise the `errno` from `sendto`.
     func send(_ payload: Data, to address: sockaddr_storage) -> Int32 {
         guard !payload.isEmpty else { return 0 }
-        var address = address
+        var address = EgressSocket.toDualStack(address)
         let length = socklen_t(address.ss_len)
         let sent = payload.withUnsafeBytes { raw in
             withUnsafePointer(to: &address) {
@@ -485,6 +482,31 @@ private final class EgressSocket {
     }
 
     // MARK: Address helpers
+
+    /// IPv4 socket address → the equivalent IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) a dual-stack socket needs;
+    /// IPv6 addresses pass through unchanged.
+    static func toDualStack(_ address: sockaddr_storage) -> sockaddr_storage {
+        var address = address
+        guard Int32(address.ss_family) == AF_INET else { return address }
+        let (v4Addr, v4Port) = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { ($0.pointee.sin_addr, $0.pointee.sin_port) }
+        }
+        var mapped = sockaddr_storage()
+        withUnsafeMutablePointer(to: &mapped) { pointer in
+            pointer.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { p in
+                p.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                p.pointee.sin6_family = sa_family_t(AF_INET6)
+                p.pointee.sin6_port = v4Port
+                withUnsafeMutableBytes(of: &p.pointee.sin6_addr) { bytes in
+                    for i in 0..<10 { bytes[i] = 0 }
+                    bytes[10] = 0xff
+                    bytes[11] = 0xff
+                    withUnsafeBytes(of: v4Addr) { for i in 0..<4 { bytes[12 + i] = $0[i] } }
+                }
+            }
+        }
+        return mapped
+    }
 
     /// IPv4/IPv6 literal → socket address; `nil` for anything else (a hostname).
     static func literalAddress(host: String, port: UInt16) -> sockaddr_storage? {
@@ -567,8 +589,15 @@ private final class EgressSocket {
             return withUnsafePointer(to: &address) {
                 $0.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
                     var addr = sin6.pointee.sin6_addr
+                    let port = UInt16(bigEndian: sin6.pointee.sin6_port)
+                    // A dual-stack socket reports IPv4 peers as ::ffff:a.b.c.d — hand back plain dotted IPv4 so the
+                    // SOCKS5 reply header carries ATYP 1 (what clients expect for an IPv4 source).
+                    let b = withUnsafeBytes(of: addr) { Array($0) }
+                    if b[0..<10].allSatisfy({ $0 == 0 }), b[10] == 0xff, b[11] == 0xff {
+                        return ("\(b[12]).\(b[13]).\(b[14]).\(b[15])", port)
+                    }
                     guard inet_ntop(AF_INET6, &addr, &text, socklen_t(text.count)) != nil else { return nil }
-                    return (String(cString: text), UInt16(bigEndian: sin6.pointee.sin6_port))
+                    return (String(cString: text), port)
                 }
             }
         default:
