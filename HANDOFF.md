@@ -2085,3 +2085,25 @@ the flow/stress/ramp tests above but the whole suite was not re-run); `idle` wit
 phone runs before the dual-stack merge (the first full gated run and its repeats) ran against the OLD relay; the phone-suite runs from the tunnel-limits work onward use the fixed one (each run now reports which egress design served it).
 Datagrams above 1472 B are still dropped in both directions and the app cannot see a received datagram's true source address (both unchanged). Test tooling: `scripts/udp_collide.py` is in the repo; the phone suite (scenarios `holdflows`, `stress`,
 `rampflows`, `tcpflows`, `vdns*`, `QATunnelOverrides`, extension fd logging) lives on the throwaway branch `test/udp-load-phone`; `usecases.py`/`udpload.c`/`portwatch.py` are in the session scratchpad.
+
+## 2026-09-20 — Fixed: SOCKS5 UDP ASSOCIATE advertised the wrong relay address on a phone-hosted server (on main, fast-forward from `fix/udp-advertised-address`, 496c2e7)
+
+**Found in the live topology** (iPhone 17 Pro Max = SOCKS5 server on its hotspot at 172.20.10.1:8081; iPhone 15 Plus and the Mac = clients): the server's ASSOCIATE reply carried `192.0.0.3` as BND.ADDR. `UDPRelay` took that from
+`LocalAddress.primaryIPv4()` = the first active non-loopback interface in `getifaddrs` order, which on a hotspot phone is a cellular translation interface, not the hotspot. The client engine sends UDP to exactly the advertised
+address, so **all UDP from hotspot clients was black-holed** (DNS still worked because the client tunnel answers it from its own virtual-DNS layer). TCP was unaffected.
+
+**Fix:** the reply now advertises the local address of the client's own TCP control connection (`LocalAddress.localAddress(of: NWConnection)`, from `currentPath.localEndpoint`) — reachable from that client by construction.
+IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is reported as plain IPv4; a genuine IPv6 control connection is answered with ATYP 4 (16 bytes) in `Socks5.associateReply`; IPv4 replies are byte-identical to before. `primaryIPv4()`
+remains the fallback if the endpoint is unavailable. Each ASSOCIATE now logs `SOCKS5 UDP ASSOCIATE will advertise <addr>`. Files: `LocalAddress.swift`, `UDPRelay.swift` (`advertisedHost:` init param),
+`Socks5Handler.swift`, `ConnectProxyHandler+Socks5.swift`; new test `scripts/udp_advertised.py`.
+
+**Verified (Mac simulator, Release+DEBUG arm64, no phone touched):** `udp_advertised.py` connects via every local address and requires BND.ADDR == the address connected to, then round-trips a datagram to the ADVERTISED address
+(no override). OLD build (main before the fix): connecting via 127.0.0.1 and via ::1 both advertised 172.20.10.3 → 2 FAIL (the bug reproduced). NEW build: 127.0.0.1, 172.20.10.3 and ::1 all advertised themselves and all round-trips
+passed, 0 failures. Regression: `udp_collide.py` N=600 on the new build = PASS (600/600 learned egress ports, 0 collisions, 0 dead, 0 foreign). `udp_qa.py` = 17/21 on BOTH the old and the new build; the 4 identical failures are the
+internet-bound checks (DNS via 1.1.1.1/8.8.8.8, domain-name destination, interleaved destinations) and are environmental: this Mac's default route is its own Client VPN (`utun4`) into the phone server, and a plain DNS query
+with no proxy also times out. Every local check passes on both. (`udp_collide.py` needs `udpload echo 127.0.0.1 21000 1` and `udpload whoami 127.0.0.1 21100` running; without them it reports every association dead — a harness gap,
+not a relay result.)
+
+**NOT verified:** the fix on the actual phones — the 17 Pro Max still runs the OLD build until the new IPA is installed, and the 15 Plus live UDP test (dns/ntp/stun/quic through the phone-hosted relay) has not been run. Expected
+after installing: the server log shows `will advertise 172.20.10.1` and client UDP flows work. The internet-bound `udp_qa` checks should be rerun with the Mac's VPN off. `udp_advertised.py` excludes 198.18/15 (the VPN's own
+tunnel interface, where a connect reaches the VPN, not the server).
