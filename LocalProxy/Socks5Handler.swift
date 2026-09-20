@@ -175,9 +175,17 @@ enum Socks5 {
     /// host:port. `host` is always IPv4-dotted (from `LocalAddress`); falls
     /// back to `0.0.0.0` only if that's somehow unavailable.
     static func associateReply(host: String, port: UInt16) -> Data {
-        var out = Data([0x05, 0x00, 0x00, 0x01])
-        let octets = host.split(separator: ".").compactMap { UInt8($0) }
-        out.append(contentsOf: octets.count == 4 ? octets : [0, 0, 0, 0])
+        var out: Data
+        var v6 = in6_addr()
+        if host.contains(":"), inet_pton(AF_INET6, host, &v6) == 1 {
+            // Client reached us over IPv6: advertise that IPv6 address (ATYP 4).
+            out = Data([0x05, 0x00, 0x00, 0x04])
+            out.append(contentsOf: withUnsafeBytes(of: &v6) { Array($0) })
+        } else {
+            out = Data([0x05, 0x00, 0x00, 0x01])
+            let octets = host.split(separator: ".").compactMap { UInt8($0) }
+            out.append(contentsOf: octets.count == 4 ? octets : [0, 0, 0, 0])
+        }
         out.append(UInt8(port >> 8))
         out.append(UInt8(port & 0xFF))
         return out

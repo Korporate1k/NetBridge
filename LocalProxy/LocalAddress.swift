@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 struct InterfaceAddress: Identifiable, Equatable {
     let name: String
@@ -7,6 +8,31 @@ struct InterfaceAddress: Identifiable, Equatable {
 }
 
 enum LocalAddress {
+    /// The local address an ACCEPTED connection is actually using — i.e. the address the client connected to — as a printable
+    /// IP literal (IPv4 dotted, or IPv6; an IPv4-mapped `::ffff:a.b.c.d` is returned as plain IPv4). This is what a SOCKS5
+    /// UDP ASSOCIATE reply must advertise as the relay address: it is by construction reachable from that client, whereas
+    /// `primaryIPv4()` is just the first active interface in the OS's list. On a phone that is also running a hotspot the
+    /// first one was `192.0.0.3` (a cellular translation interface), so hotspot clients were told to send their UDP to an
+    /// address they could never reach. `nil` if the connection has no usable local endpoint yet.
+    static func localAddress(of connection: NWConnection) -> String? {
+        guard case let .hostPort(host, _)? = connection.currentPath?.localEndpoint else { return nil }
+        switch host {
+        case .ipv4(let address):
+            let b = [UInt8](address.rawValue)
+            return b.count == 4 ? "\(b[0]).\(b[1]).\(b[2]).\(b[3])" : nil
+        case .ipv6(let address):
+            let b = [UInt8](address.rawValue)
+            guard b.count == 16 else { return nil }
+            if b[0..<10].allSatisfy({ $0 == 0 }), b[10] == 0xff, b[11] == 0xff { return "\(b[12]).\(b[13]).\(b[14]).\(b[15])" }
+            var text = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            var raw = in6_addr()
+            withUnsafeMutableBytes(of: &raw) { $0.copyBytes(from: b) }
+            return inet_ntop(AF_INET6, &raw, &text, socklen_t(text.count)) != nil ? String(cString: text) : nil
+        default:
+            return nil
+        }
+    }
+
     /// Returns the device's active local IPv4 address — whatever interface is
     /// actually up (Wi-Fi, Personal Hotspot, USB/Ethernet, ...), skipping
     /// loopback and link-local addresses. Display-only: the listener binds

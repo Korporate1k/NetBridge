@@ -84,10 +84,17 @@ final class UDPRelay {
     private var clientTransferReport: NWConnection.PendingDataTransferReport?
     private static let stallThresholdMs = 2000.0
 
-    init(id: Int, queue: DispatchQueue, stats: ProxyStats) {
+    /// The address the SOCKS5 reply tells the client to send its UDP to (BND.ADDR). `advertisedHost` should be the local address
+    /// of the client's own control connection (`LocalAddress.localAddress(of:)`), which is reachable from that client by
+    /// construction; without one this falls back to `LocalAddress.primaryIPv4()`, the first interface in the OS's list —
+    /// which on a phone with cellular + a hotspot is not the hotspot address.
+    private let advertisedHost: String?
+
+    init(id: Int, queue: DispatchQueue, stats: ProxyStats, advertisedHost: String? = nil) {
         self.id = id
         self.queue = queue
         self.stats = stats
+        self.advertisedHost = advertisedHost
     }
 
     /// Starts the ephemeral listener; reports `(host, port)` once ready for
@@ -104,7 +111,7 @@ final class UDPRelay {
                 switch state {
                 case .ready:
                     let port = listener.port.map { UInt16($0.rawValue) }
-                    let host = LocalAddress.primaryIPv4() ?? "0.0.0.0"
+                    let host = self.advertisedHost ?? LocalAddress.primaryIPv4() ?? "0.0.0.0"
                     DebugLog.important("udp", tunnel: self.id, "UDP ASSOCIATE relay ready on \(host):\(port.map { String($0) } ?? "?")")
                     self.didOpenStats = true
                     self.stats.connectionOpened()
