@@ -2052,3 +2052,36 @@ through the relay all pass with ATYP 1 / ATYP 4 reply headers as expected.
 - NOT verified: the phone re-run with the fix (expect `manyflows` loss to fall to the session-cap drops only, and no foreign datagrams); load-comparison numbers for the dual-stack socket (running when this was written);
   behaviour when the SERVER runs on an iPhone (file-descriptor limits far lower than on the Mac); cellular; IPv6-only networks. Unsigned IPA rebuild after this merge is pending. Test tooling: `scripts/udp_collide.py`
   is in the repo; the phone suite/harness (`usecases.py`, `udpload.c` whoami/blast modes, DEBUG `QAUDPScenarios`) live in the scratchpad and on the throwaway `test/udp-load-phone` branch (older copies).
+
+## 2026-09-19 — Tunnel limits changed and MERGED: max sessions 200 → 1000, UDP idle timeout 10 s → 120 s (iPhone 15 Plus measurements)
+
+`TunnelEngine` (`LWIPTunnelEngine`) now takes `maxSessions` / `udpTimeoutSeconds` (defaults `defaultMaxSessions = 1000`, `defaultUDPTimeoutSeconds = 120`, clamped ≥1 because clap `exit()`s the
+whole extension on a bad argument) and passes `--max-sessions N --udp-timeout S` to tun2proxy (both flags exist in the vendored 0.8.3 / fc77ca3). Commits on `main`: 975511f (params), 9e03afa/a21328c/4d56e02
+(values as measurements came in), 4a1aae2 (final, with the numbers in the code comment). Unsigned IPA rebuilt: version 1.0 (20260919.235849).
+
+**Why these numbers (device-measured; extension memory sampled every 10 s, so a brief spike between samples could be missed):**
+- Baseline ≈3.9 MB. ≈25 KB per idle UDP session, ≈47 KB once a session has carried traffic, ≈35 KB per TCP session. 100/300/500/700/900 UDP sessions = 8.3/16.9/25.3/33.9/42.5 MB (burst);
+  TCP 100/300 = 7.4/14.5 MB. A burst of 1000 (976 admitted at cap 1000) after two traffic rounds = **45.6 MB, the worst case measured (≈91% of the ≈50 MB documented kill limit; kill NEVER observed, and the real
+  limit was not measured)**; 900 held sessions + 19 Mbit/s downlink + 16 bulk TCP streams (126 MB each way) = 42.8 MB; 600 + the same traffic = 29.9 MB. iOS killing the extension drops the whole VPN, so the margin is
+  thin at 1000 (≈9%); the owner chose 1000 over the more conservative 800 (≈38 MB, ≈23% margin). Lower `defaultMaxSessions` to trade back.
+- **File-descriptor ceiling, confirmed with logging:** the extension's `RLIMIT_NOFILE` soft limit is **2560** and each UDP session holds **2 fds** (976 sessions = 1974 open fds), so ≈**1200 UDP sessions is a hard
+  ceiling no cap can exceed** (a ramp answered fully to 1200 and got nothing at 1300 while memory sat flat at 37 MB).
+- **Saturation is disruptive:** in tun2proxy's accept loops the cap check comes BEFORE DNS handling, so at the cap NEW flows are dropped including DNS lookups (and new TCP connections) until idle sessions expire
+  (UDP `--udp-timeout`, TCP `--tcp-timeout` default 600 s, not changed). A test that fills the cap therefore fails its own "is the tunnel up" post-check (this is why the 1000-burst scenario printed INVALID while the extension
+  was alive: engine started once, memory and fds flat).
+- Real-usage context (this one phone's tunnel log, 27 earlier ordinary runs): peak concurrent sessions 5–169, median ≈90, mostly TCP; the old cap 200 was never reached in ordinary use (max 169), 1000 is far above it.
+
+**What it fixed (verified on the phone at cap 700 / 60 s with the dual-stack relay):** `manyflows` 200 flows 29,999/29,999 delivered, 0 cap drops (was 10–13% loss); `churn` 300/300 (was 96–99%); the overflow case
+(1000 flows vs cap 700) admitted 676, dropped the rest cleanly with memory bounded at 33.7 MB and no crash; idle flows kept the same external port through 55 s of silence (was: new port after 15 s).
+
+**Virtual-DNS name mapping — a known limit of the vendored engine, NOT fixed:** `MAPPING_TIMEOUT = 60 s` is hardcoded in `virtual_dns.rs`; the mapping is refreshed only when a name is resolved or a NEW session starts (`touch_ip` is
+called at session creation in `lib.rs`, not per packet, despite its comment), and expired entries are purged lazily by the next DNS lookup from any app. A flow that resumes after its session ended can then be sent to the raw
+fake `198.18.x.x` address and go nowhere: `idle:15:30:45:55:75` at a 60 s timeout got no reply after the 75 s gap (engine created the new session but forwarded `198.18.0.7`, not the hostname). Six quiet-condition experiments
+(`vdns` 20/45/70/100 s, `vdnsbusy` 70/150 s) all passed because no lookup purged the mapping, so the deterministic reproduction (the planned `vdnspurge`) was NOT run — the purge explanation rests on the source reading plus the one
+failure, and is unconfirmed. A longer UDP timeout only shrinks the exposure. Real fix = patch `MAPPING_TIMEOUT` (or touch on traffic) in the engine and rebuild the xcframework (source copies are at /tmp/tun2proxy-build, all fc77ca3).
+
+**NOT verified at the shipped 1000 / 120 s settings:** the full 14-scenario suite on the fixed dual-stack relay (the batch was stopped when the cap decision changed — this means the dual-stack relay fix has been exercised on the phone by
+the flow/stress/ramp tests above but the whole suite was not re-run); `idle` with a 120 s timeout; the 600 s TCP idle timeout (documented default, untested); a server running on an iPhone (far lower fd limits); cellular. All earlier
+phone runs before the dual-stack merge (the first full gated run and its repeats) ran against the OLD relay; the phone-suite runs from the tunnel-limits work onward use the fixed one (each run now reports which egress design served it).
+Datagrams above 1472 B are still dropped in both directions and the app cannot see a received datagram's true source address (both unchanged). Test tooling: `scripts/udp_collide.py` is in the repo; the phone suite (scenarios `holdflows`, `stress`,
+`rampflows`, `tcpflows`, `vdns*`, `QATunnelOverrides`, extension fd logging) lives on the throwaway branch `test/udp-load-phone`; `usecases.py`/`udpload.c`/`portwatch.py` are in the session scratchpad.
