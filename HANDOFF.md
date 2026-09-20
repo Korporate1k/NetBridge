@@ -2008,3 +2008,47 @@ lost 0.10% with 36 relay drops.
   returns (hung DNS) holds its buffer until the association closes.
 - NOT verified: behaviour under a hung/very slow resolver, many simultaneous distinct cold hostnames, or on cellular. Branch `fix/udp-reply-queue` (bounded reply queue) remains unmerged.
 - Unsigned IPA rebuilt after this change: version 1.0 (20260919.203423) at build/Build/Products/Release-iphoneos/LocalProxy.ipa. Phone still has the throwaway `test/udp-load-phone` Debug build installed, VPN down.
+
+## 2026-09-19 — Full-scale UDP use-case QA on the iPhone 15 Plus; cross-association hijack found and FIXED (dual-stack egress); tunnel-engine limits documented
+
+**Method (phone → Client VPN → Mac-hosted relay in the simulator → Mac-side echo/whoami/blast servers, plus real internet).** Every result is gated on PROOF that the VPN is up: the phone
+resolves a random name and must get a virtual-DNS address in 198.18.0.0/15 (only tun2proxy can answer that) AND complete a datagram round trip through the relay, before and after each
+scenario; a scenario with no proof is `INVALID`, never PASS/FAIL. Controls: VPN off + gate on → refused to run anything (proxy saw 0 clients); VPN off + gate bypassed → ntp/stun/dns/quic all "PASS"
+with 0 relays opened (DNS answer was the real 104.20.23.154; RTTs 13–23 ms vs 50–300 ms tunnelled) while the echo-based tests FAIL (localtest.me → the phone's own loopback) — i.e. without the gate
+the suite gives false passes AND false fails. Harness lessons: a scenario's "reply source port differs" check is unobservable through the tunnel (see masking below); receive loops must poll to a
+deadline, not exit on the first 500 ms timeout (both were my test bugs, fixed).
+
+**Full gated run: 10 PASS / 4 FAIL / 0 INVALID; tunnel engine started once; extension memory 3.9 MB baseline, 15.8 MB peak (200 flows), flat ~9 MB through a 5-minute soak (limit 50 MB).**
+- PASS, each cross-checked against the relay's own counters: NTP over an IPv4 name and an IPv6 literal (relay saw both flows, 1 up/1 down); STUN (the mapped external port Google reported, 52141, equals
+  the relay's egress socket local port for that flow — the datagram provably left from the Mac relay); HTTP/3 (`http=http/3`, relay saw cloudflare.com:443 13 up/12 down); DNS (answers are the tunnel's fake
+  198.18.x.x, 0 relay flows for 8.8.8.8/1.1.1.1 — DNS is answered locally and never relayed); closed-port then echo 20/20; VoIP-style 50 pps × 172 B (1499 sent = relay up = relay down = received);
+  game-style 3 flows × 60 pps (8099 at every hop); video-style downlink 2000 pps × 1200 B, 19.2 Mbit/s (relay sent 40000, phone got 40000); 5-minute soak, 20 flows × 3000 pps
+  (899,999 sent, 899,818 received = 0.02%; 150 lost phone→relay, 31 relay→phone; relay dropped nothing); unsolicited datagram from a never-contacted peer delivered 3/3 (full cone works end to end).
+- FAIL / limits found (all reproduced, 3 independent repeats each unless noted):
+  1. **tun2proxy caps concurrent sessions at 200** (`Too many sessions that over 200, dropping new session` — the ONLY warning/error kind in the whole run, 4052 lines). 200 concurrent flows lose ~10–13%
+     (4045 engine drops vs 4040 lost in run 1); 300 short flows at 20/s lose 3–11 (exactly 7 drops vs 7 failures in run 1). Configurable: `--max-sessions N` is in the vendored binary; not set in
+     `TunnelEngine.swift`. Cost ≈ 60 KB/session (15.8 MB at 200) against the 50 MB extension limit, so raising it needs a measured value (≈400 looks feasible; 1000 would not be), not a big number.
+  2. **UDP session idle timeout is 10.0 s** (min lifetime over 563 timed-out sessions = 10.0 s; no `--udp-timeout` set). A flow silent >10 s gets a NEW relay association → new external port (idle test:
+     replies survive but the port changed after 15/30/60 s). Servers keyed on source port (games, TURN, SIP) break unless the app sends keepalives more often than every ~10 s. `--udp-timeout` exists.
+  3. **UDP datagrams above 1472 B payload are dropped in BOTH directions** (uplink: relay counted exactly 15 datagrams = the 5×(1200,1400,1472); downlink `bigdown` 0/5 for 1500–8000). Needs IP fragmentation
+     across the tunnel MTU; tun2proxy does not carry it. Silent (no log). Not fixed.
+  4. **The tunnel masks the true source address of received datagrams**: the app sees every datagram (including an unsolicited one from another peer) as coming from the flow's original destination
+     address, so apps that check the peer's address (STUN/ICE hole punching) cannot see who sent it. Delivery itself works.
+  5. (Explained, not a bug) DNS is virtual, never relayed as UDP.
+
+**BUG FOUND AND FIXED (this was in the merged full-cone relay): cross-association datagram hijack.** The relay's IPv4 egress socket could be handed an ephemeral port that ANOTHER association's client-facing
+`NWListener` (a dual-stack IPv6 socket) already held — the kernel keeps separate port tables per address family and lets an IPv6 bind take a port an IPv4 wildcard socket holds. IPv4 datagrams for the
+listener then landed on the egress socket and were forwarded to a DIFFERENT client as a "reply" (that flow went dead; its data was cross-delivered). Evidence: on the phone runs the victims' egress port equalled
+another live relay's advertised port in every case (7/7); the "extra" received datagrams were exactly 24/224 B = the SOCKS5 hostname header for `udp1.localtest.me` (4+1+17+2) plus the payload; and this made
+the phone's `manyflows` loss ~1% worse than the session cap alone (an earlier statement here that the cap explains it exactly was overstated). Deterministic Mac reproduction (`scripts/udp_collide.py`,
+interleaved creation order, dual-stack test clients): 7/15/4 collisions, 18/24/10 dead, equal foreign-datagram counts per 600 associations on the pre-fix relay. **Fix:** one dual-stack IPv6 egress socket per
+association (IPv4 destinations as `::ffff:a.b.c.d`; IPv4-mapped sources decoded back to plain IPv4 so reply headers keep ATYP 1), so both sockets live in one port table. Also added `noClientDrops` (replies that arrive
+before the client is bound were dropped silently). **Verification of the fix:** collision test 0 collisions / 0 dead / 0 foreign / 0 duplicates over 3×600, 2×1200 and 20×1200 associations (24,000 more);
+udp_qa.py 23/23; broadcast and 9000/9200 B; cold-hostname bursts 200/200, 1000/1000, 2000 pps and 10000 pps fully delivered; real NTP over hostname, IPv4 literal, two IPv6 literals and DNS over IPv4 and IPv6
+through the relay all pass with ATYP 1 / ATYP 4 reply headers as expected.
+- Two false leads ruled out by experiment (both my TEST tools hitting the same kernel behaviour, not relay bugs): plain IPv4 Python client sockets colliding with relay listeners (fixed by dual-stack test clients),
+  and a rare (~1 in 1200) missing first reply caused by the whoami test server's short-lived IPv4 "punch" socket (0 anomalies in 24,000 associations once it was dual-stack; it was ~1/1200 before).
+
+- NOT verified: the phone re-run with the fix (expect `manyflows` loss to fall to the session-cap drops only, and no foreign datagrams); load-comparison numbers for the dual-stack socket (running when this was written);
+  behaviour when the SERVER runs on an iPhone (file-descriptor limits far lower than on the Mac); cellular; IPv6-only networks. Unsigned IPA rebuild after this merge is pending. Test tooling: `scripts/udp_collide.py`
+  is in the repo; the phone suite/harness (`usecases.py`, `udpload.c` whoami/blast modes, DEBUG `QAUDPScenarios`) live in the scratchpad and on the throwaway `test/udp-load-phone` branch (older copies).
