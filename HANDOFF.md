@@ -2112,3 +2112,16 @@ tunnel interface, where a connect reaches the VPN, not the server).
 
 Installed a signed Release build of main (ac9e87d) on the 17 Pro Max (hotspot server 172.20.10.1:8081) with the owner's go-ahead. From the Mac (client, same hotspot) a UDP ASSOCIATE now returns **BND.ADDR 172.20.10.1** (was 192.0.0.3),
 and 20/20 datagrams round-tripped through the phone's relay to an echo server on the Mac, which saw them arrive from 172.20.10.1 (the phone). NOT yet run: the iPhone 15 Plus client (dns/ntp/stun/quic) against the fixed server.
+
+## 2026-09-20 — Live topology test: iPhone 15 Plus (client) through the iPhone 17 Pro Max hotspot server — UDP works with the advertised-address fix
+
+Topology: server = 17 Pro Max (signed Release build of main ac9e87d, hotspot 172.20.10.1:8081), client = 15 Plus running the throwaway QA build from `test/udp-load-phone` (9d124eb; client-side only, the fix is server-side). A first attempt ran with the
+15 Plus's previous build, which has no QA hooks: the scenarios never started (0 `[qa]` lines in 12 min) — a harness/build mistake, not a relay result; the test script was killed and rerun after installing the QA build.
+
+Result (`dns,ntp,stun,quic`, gate OFF because the tunnel-proof gate needs a Mac-side server on the relay's machine, so these are NOT gate-validated; validation = the server's own log):
+- `dns` PASS — 8.8.8.8 and 1.1.1.1 both answered with the tunnel's virtual address 198.18.0.5 (proves the tunnel intercepts DNS; DNS is answered inside the client and never uses the relay).
+- `ntp` PASS — stratum 3, v4 by name (rtt 150 ms) and v6 literal (rtt 126 ms). `stun` PASS — binding ok, mapped 104.28.166.197:10371 (not compared with the phone's real public address). `quic` PASS — http/3.
+- Server log independently shows 5 UDP ASSOCIATEs from the 15 Plus (172.20.10.12), every one advertised 172.20.10.1, every one had a client-bound datagram, and the first datagrams match the scenarios: time.cloudflare.com:123,
+  2606:4700:f1::1:123, stun.l.google.com:19302, cloudflare.com:443 (1200 B) (+ one unrelated 1200 B QUIC flow to an IPv6 :443). The server also logs a "STALL no datagrams either direction ~3 s" per association after each finishes; not investigated (idle after completion is the likely reading, unconfirmed).
+NOT covered: only 4 scenarios, not the 14-scenario suite; no load/idle/cap runs on this topology; the relay-on-iPhone capacity limits (fd/memory) remain unmeasured; cellular-only not tested.
+The 15 Plus now holds the QA build, not a release build.
