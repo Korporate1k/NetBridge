@@ -1990,3 +1990,21 @@ The previous section reported "REGRESSION: single association @40k pps — new 1
   under overload, but is unproven — merge only if wanted for robustness.
 - Method lesson: one run per configuration is not evidence at the saturation knee here; use interleaved repeats and compare against the spread.
 - Still unexplained: the 1600-association 48.6% loss (identical in old and new) and the phone-side ~4.3k pps send ceiling.
+
+## 2026-09-19 — Fixed: datagrams dropped while a hostname's first lookup is in flight (item 4; on main, fast-forward from `fix/udp-resolve-buffer`)
+
+**Problem (reproduced before changing anything):** UDP to a hostname destination (SOCKS5 ATYP 3) is resolved with `getaddrinfo` off-queue and datagrams that arrive during the lookup
+were buffered up to `maxPendingPerName = 32`; the rest were dropped. With a fresh `*.localtest.me` name per trial (`scripts/udp_cold_resolve.py`): an instant burst of 200 or 1000 delivered
+exactly 32 (first missing seq = 32 every trial); 2000 pps for 1 s delivered ~1840/2000; 10000 pps ~9200/10000 (C echo). Relay `sendDrops` summed 6311–6664 per run.
+
+**Fix (`UDPRelay.swift`):** the per-name buffer is now a byte budget — 1 MiB and at most 4096 datagrams per in-flight lookup, per association, freed when the lookup returns — instead of a count of 32
+(new private `PendingLookup`). A cold lookup takes ~10 ms to over half a second, so the buffer must cover lookup time × the flow's rate; bytes also bound memory regardless of datagram size.
+
+**Verification (simulator, Release+DEBUG-flag arm64):** instant bursts 200/200 and 1000/1000, 2000 pps 2000/2000, 10000 pps 10000/10000, relay `sendDrops` 0. Functional regression udp_qa.py 23/23,
+broadcast + 9000/9200 B pass. **iPhone 15 Plus through the VPN** (one 2k pps step, 8 flows, 20 s): 39,999 sent / 39,999 received, 0.00% loss, relay `send_drops` 0 — the same step before the fix
+lost 0.10% with 36 relay drops.
+- A first 10k-pps run with a Python echo server still lost ~55% with relay sendDrops=0; that was the Python echo/sender sharing the interpreter lock, not the relay (rerun with the C echo: 100%).
+- Worst case memory: 1 MiB per hostname with a lookup in flight per association (e.g. a client spraying many distinct hostnames at once); released when each lookup finishes. A lookup that never
+  returns (hung DNS) holds its buffer until the association closes.
+- NOT verified: behaviour under a hung/very slow resolver, many simultaneous distinct cold hostnames, or on cellular. Branch `fix/udp-reply-queue` (bounded reply queue) remains unmerged.
+- Unsigned IPA rebuilt after this change: version 1.0 (20260919.203423) at build/Build/Products/Release-iphoneos/LocalProxy.ipa. Phone still has the throwaway `test/udp-load-phone` Debug build installed, VPN down.
