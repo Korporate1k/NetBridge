@@ -1975,3 +1975,18 @@ tunnel+relay; 8 flows, 20 s/step, Debug app, extension 3.9–4.1 MB footprint, 0
   zero relays); both were discarded, not reported. The phone flood only counts if the proxy saw relays.
 - NOT tested: sustained multi-minute phone load, cellular, phone-as-server, other UDP mixes, IPv6 flood, app in background. Phone left with the throwaway branch's Debug build
   installed and the VPN down; the sim proxy and echo are stopped.
+
+## 2026-09-19 — CORRECTION to the load-test section above: the single-association "regression" is NOT established
+
+The previous section reported "REGRESSION: single association @40k pps — new 17.9% loss vs old 2.7%" from ONE run per design. A follow-up comparison — old (fd596ec), main
+(50aa405) and a candidate fix, three builds interleaved over two rounds, same harness — does not reproduce it:
+- 1 association @40k pps: old 59.2% / 39.2% loss (rounds 1 / 2), main 14.8% / 28.2%, fix 32.2% / 18.6%. Run-to-run spread within one design (up to 20 points) is as large as the
+  spread between designs; the earlier "old 2.7%" was an outlier. At 30k: old 0.0/1.5%, main 0.1/0.7%, fix 16.4/0.0%. At 60k all three lose 45–74%.
+- What IS consistent: a single association tops out around 20–30k pps (1200 B) in every design and collapses above that; 16 associations hold 40k lossless in all three;
+  main is better than old at 80k overload (26% vs 49–50% loss at 16 assocs; old's 128-assoc @80k stalled to ~5k pps in both rounds, main delivered 5–52k, fix 12–20k — noisy).
+- Hypothesis tested and NOT supported: that replies pile up in the client-side send queue (`pendingSends`, O(n) copy per send). Branch `fix/udp-reply-queue` (commit on that
+  branch, NOT merged) replaces it with a bounded O(1) FIFO that drops the oldest reply at 1024; across 292 relays in the final run `replyDrops` was 0 everywhere (the cap was never
+  reached) and throughput did not measurably change. Functional QA on that build: udp_qa.py 23/23, broadcast and 9000/9200 B payloads pass. It is harmless and bounds memory
+  under overload, but is unproven — merge only if wanted for robustness.
+- Method lesson: one run per configuration is not evidence at the saturation knee here; use interleaved repeats and compare against the spread.
+- Still unexplained: the 1600-association 48.6% loss (identical in old and new) and the phone-side ~4.3k pps send ceiling.
