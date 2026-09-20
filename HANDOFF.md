@@ -2125,3 +2125,22 @@ Result (`dns,ntp,stun,quic`, gate OFF because the tunnel-proof gate needs a Mac-
   2606:4700:f1::1:123, stun.l.google.com:19302, cloudflare.com:443 (1200 B) (+ one unrelated 1200 B QUIC flow to an IPv6 :443). The server also logs a "STALL no datagrams either direction ~3 s" per association after each finishes; not investigated (idle after completion is the likely reading, unconfirmed).
 NOT covered: only 4 scenarios, not the 14-scenario suite; no load/idle/cap runs on this topology; the relay-on-iPhone capacity limits (fd/memory) remain unmeasured; cellular-only not tested.
 The 15 Plus now holds the QA build, not a release build.
+
+## 2026-09-20 — Full 14-scenario UDP suite on the LIVE topology (15 Plus client → iPhone 17 Pro Max hotspot relay), reconciled against the relay phone's own log
+
+Setup: client = iPhone 15 Plus (QA build from `test/udp-load-phone` 9d124eb), server/relay = iPhone 17 Pro Max (main ac9e87d, 172.20.10.1:8081, tunnel limits 1000 sessions / 120 s UDP timeout), Mac-side echo/whoami/blast servers on the Mac's
+hotspot address 172.20.10.3, reached by the NAME `172.20.10.3.nip.io` (resolved by the relay phone). Tunnel-proof gate skipped (it needs the relay to reach the Mac's loopback), so the evidence is the relay phone's log.
+**A first run with the IP literal was INVALID and was stopped:** a literal on the shared hotspot LAN is reached directly from the client, bypassing the tunnel (the Mac's whoami saw the 15 Plus, 172.20.10.12, not the relay; the relay log showed no traffic to
+172.20.10.3). Its bigdgram/closedport/p2p/voip PASS lines proved nothing about the relay. The valid run uses the name (virtual DNS → tunnel → relay); p2p then reported "server saw the relay as 172.20.10.1".
+
+Client results (all 14 ran, invalid=0): ntp, stun, dns (fake 198.18.x answers), quic (HTTP/3), closedport (200 to a closed port then echo 20/20), p2p (unsolicited datagram delivered; source masked by the tunnel, as before), voip (1499/1499, p99 20 ms),
+game (3 flows, 8099/8099, p99 46 ms), video (40000/40000 at 19.2 Mbit/s), manyflows (200 flows, 29999/29999), idle (replied after 0/5/15/30/60 s, relay port unchanged), soak (20 flows × 3000 pps × 300 s, sent 899,978 / recv 899,965) PASS;
+churn 299/300; **bigdgram FAIL** at ≥1500 B (1200/1400/1472 5/5, 1500/2000/4000/8000 0/5) = the documented >1472 B drop, unchanged, not a regression.
+
+Server-side reconciliation (relay phone log, all 546 associations from 172.20.10.12, every one advertised 172.20.10.1, 0 errors / 0 warnings, relay sendDrops=0 and noClientDrops=0 on every association):
+- soak: relay forwarded up 899,972 and received back 899,972. So of the client's 13 lost datagrams 6 were lost client→relay and 7 relay→client (the hotspot Wi-Fi hop); none between the relay and the Mac server; none dropped by the relay.
+- video: 1 up, 40,000 down = client 40000/40000. closedport: 200 up / 0 down = expected. manyflows/voip/game totals consistent with the client counts.
+- churn's one miss is association T1391: 1 datagram up, 0 back, closed after 120 s idle — the request was forwarded but no reply returned; the relay dropped nothing, and I cannot tell whether the request or the reply was lost past the relay.
+Caveats / NOT verified: `idle` only reached a 60 s gap (the 120 s timeout is untested); 556 "STALL no datagrams for ~3 s" lines on the relay (11 "stall cleared") were not investigated; nothing here measures the iPhone-as-relay fd/memory limits, cap saturation, or cellular-only
+clients; the Mac was concurrently a client of the same relay (~200+ connections). The soak's 20 associations only logged their close summaries ~2 min after the run ended (the 120 s UDP idle timeout) — reading the log too early shows them as open.
+Tools: `livesuite.py` (run with `HOST=<name>`) and `recon.py` are on the throwaway branch `test/udp-load-phone` under scripts/ (they need its QA hooks); never merge that branch.
