@@ -2107,3 +2107,8 @@ not a relay result.)
 **NOT verified:** the fix on the actual phones — the 17 Pro Max still runs the OLD build until the new IPA is installed, and the 15 Plus live UDP test (dns/ntp/stun/quic through the phone-hosted relay) has not been run. Expected
 after installing: the server log shows `will advertise 172.20.10.1` and client UDP flows work. The internet-bound `udp_qa` checks should be rerun with the Mac's VPN off. `udp_advertised.py` excludes 198.18/15 (the VPN's own
 tunnel interface, where a connect reaches the VPN, not the server).
+
+## 2026-09-20 — Advertised-address fix VERIFIED on the real phone server (iPhone 17 Pro Max)
+
+Installed a signed Release build of main (ac9e87d) on the 17 Pro Max (hotspot server 172.20.10.1:8081) with the owner's go-ahead. From the Mac (client, same hotspot) a UDP ASSOCIATE now returns **BND.ADDR 172.20.10.1** (was 192.0.0.3),
+and 20/20 datagrams round-tripped through the phone's relay to an echo server on the Mac, which saw them arrive from 172.20.10.1 (the phone). NOT yet run: the iPhone 15 Plus client (dns/ntp/stun/quic) against the fixed server.
