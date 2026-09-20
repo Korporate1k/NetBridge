@@ -41,11 +41,20 @@ final class UDPRelay {
 
     /// Hostname destinations (ATYP 3) are resolved off-queue with
     /// `getaddrinfo`; datagrams that arrive while a lookup is in flight wait in
-    /// `pendingResolution` (capped) and results are cached briefly.
+    /// `pendingResolution` and results are cached briefly.
+    ///
+    /// How much to buffer has to cover (lookup time) × (the flow's datagram
+    /// rate), and a cold lookup takes anywhere from ~10 ms to over half a
+    /// second. A count cap of 32 dropped everything past the 32nd datagram
+    /// (measured: an instant burst of any size delivered exactly 32; 10,000
+    /// datagrams/s lost 40–90%), so the budget is bytes (bounds memory whatever
+    /// the datagram size) plus a generous count limit for tiny datagrams. Per
+    /// name, per association; freed as soon as the lookup completes.
     private var resolved: [String: (address: sockaddr_storage, expires: DispatchTime)] = [:]
-    private var pendingResolution: [String: [(payload: Data, port: UInt16)]] = [:]
+    private var pendingResolution: [String: PendingLookup] = [:]
     private static let resolutionTTLSeconds = 60.0
-    private static let maxPendingPerName = 32
+    private static let maxPendingDatagrams = 4096
+    private static let maxPendingBytes = 1 << 20
 
     /// Per-`NWConnection` outbound send queue for the CLIENT connection (fixed
     /// key). Necessary because firing multiple `NWConnection.send()` calls back
@@ -184,20 +193,22 @@ final class UDPRelay {
             return
         }
         if pendingResolution[name] != nil {
-            if pendingResolution[name]!.count < Self.maxPendingPerName {
-                pendingResolution[name]!.append((payload, port))
+            if pendingResolution[name]!.items.count < Self.maxPendingDatagrams,
+               pendingResolution[name]!.bytes + payload.count <= Self.maxPendingBytes {
+                pendingResolution[name]!.items.append((payload, port))
+                pendingResolution[name]!.bytes += payload.count
             } else {
                 sendDrops += 1
             }
             return
         }
-        pendingResolution[name] = [(payload, port)]
+        pendingResolution[name] = PendingLookup(items: [(payload, port)], bytes: payload.count)
         let tunnelID = id
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let address = EgressSocket.resolve(name)
             self?.queue.async {
                 guard let self = self, !self.cancelled else { return }
-                let waiting = self.pendingResolution.removeValue(forKey: name) ?? []
+                let waiting = self.pendingResolution.removeValue(forKey: name)?.items ?? []
                 guard let address = address else {
                     DebugLog.debug("udp", tunnel: tunnelID, "UDP ASSOCIATE could not resolve \(name), dropped \(waiting.count) datagram(s)")
                     self.sendDrops += waiting.count
@@ -342,6 +353,14 @@ final class UDPRelay {
             stats.connectionClosed()
         }
     }
+}
+
+// MARK: - PendingLookup
+
+/// Datagrams held back while a hostname's first `getaddrinfo` is in flight.
+private struct PendingLookup {
+    var items: [(payload: Data, port: UInt16)]
+    var bytes: Int
 }
 
 // MARK: - EgressSocket
