@@ -30,7 +30,7 @@ public final class TunnelEngine {
     /// exceeds its memory ceiling (≈50 MB documented; never reached in testing, max seen 42.5 MB), which is far worse than
     /// dropping new flows, so: 800 keeps the worst measured case at ≈38 MB (≈23% margin) and ≈33% below the ≈1200
     /// session ceiling. 900 also worked in testing but leaves ≈15% margin — change this one constant to use it.
-    public static let defaultMaxSessions = 800
+    public static let defaultMaxSessions = 1000
     /// Idle time after which a UDP session is torn down (`--udp-timeout`; tun2proxy's default is 10). A new packet
     /// after that opens a NEW session, which the SOCKS5 relay sees as a new association with a new external port,
     /// so 10 s broke anything keyed on the source port (games, TURN, SIP) unless it sent keepalives more often than
