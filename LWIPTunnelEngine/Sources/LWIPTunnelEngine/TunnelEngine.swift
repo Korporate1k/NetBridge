@@ -20,6 +20,14 @@ public final class TunnelEngine {
     public static let tunnelLocalAddressV6 = "fd00:7470::2"
     private static let tunnelMTU: UInt16 = 1500
 
+    /// Concurrent TCP+UDP sessions the engine will track (`--max-sessions`; tun2proxy's own default is 200). Past the
+    /// cap it silently drops packets of NEW flows ("Too many sessions ... dropping new session"), so the cap is also
+    /// what protects the extension's ~50 MB memory limit — raise it only to a measured value.
+    public static let defaultMaxSessions = 200
+    /// Idle time after which a UDP session is torn down (`--udp-timeout`; tun2proxy's default is 10). A new packet
+    /// after that opens a NEW session, which the SOCKS5 relay sees as a new association with a new external port.
+    public static let defaultUDPTimeoutSeconds = 10
+
     /// Outbound packets the engine wants delivered back into the tunnel
     /// (i.e. handed to `NEPacketTunnelFlow.writePackets`), with their protocol
     /// family. Fired synchronously on the engine's dedicated read thread,
@@ -38,6 +46,8 @@ public final class TunnelEngine {
     private let proxyPort: UInt16
     private let username: String?
     private let password: String?
+    private let maxSessions: Int
+    private let udpTimeoutSeconds: Int
 
     private var appFd: Int32 = -1
     private var worker: Thread?
@@ -45,11 +55,16 @@ public final class TunnelEngine {
     private var started = false
     private var stopped = false
 
-    public init(proxyHost: String, proxyPort: UInt16, username: String? = nil, password: String? = nil) {
+    public init(proxyHost: String, proxyPort: UInt16, username: String? = nil, password: String? = nil,
+                maxSessions: Int = TunnelEngine.defaultMaxSessions,
+                udpTimeoutSeconds: Int = TunnelEngine.defaultUDPTimeoutSeconds) {
         self.proxyHost = proxyHost
         self.proxyPort = proxyPort
         self.username = username
         self.password = password
+        // Clamped: these become command-line numbers, and clap exit()s the whole extension on a parse error.
+        self.maxSessions = max(1, maxSessions)
+        self.udpTimeoutSeconds = max(1, udpTimeoutSeconds)
     }
 
     /// Starts the engine and the tunnel-bound read loop on dedicated
@@ -85,7 +100,7 @@ public final class TunnelEngine {
         // the program name. Without the leading "tun2proxy", the real first
         // flag is swallowed, the parse fails, and clap calls exit() — killing
         // the whole extension process with no crash log.
-        let cli = "tun2proxy --tun-fd \(tunFd) --close-fd-on-drop true --proxy \(proxyURL(redacted: false)) --dns virtual --verbosity info"
+        let cli = "tun2proxy --tun-fd \(tunFd) --close-fd-on-drop true --proxy \(proxyURL(redacted: false)) --dns virtual --max-sessions \(maxSessions) --udp-timeout \(udpTimeoutSeconds) --verbosity info"
         logHandler?("tun2proxy starting: " + cli.replacingOccurrences(of: proxyURL(redacted: false), with: proxyURL(redacted: true)))
 
         let worker = Thread { [weak self] in
