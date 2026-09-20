@@ -23,15 +23,23 @@ public final class TunnelEngine {
     /// Concurrent TCP+UDP sessions the engine will track (`--max-sessions`; tun2proxy's own default is 200). Past the
     /// cap it silently drops packets of NEW flows ("Too many sessions ... dropping new session"), so the cap is also
     /// what protects the extension's ~50 MB memory limit (iOS kills the whole VPN past it) — raise it only to a
-    /// measured value. Measured on an iPhone 15 Plus: ≈3.9 MB baseline + ≈43 KB per UDP session / ≈35 KB per TCP
-    /// session (linear: 900 idle UDP sessions = 42.5 MB, 700 = 33.9 MB, 500 = 25.3 MB). 700 keeps ≈38 MB even with a
-    /// heavy stream running (≈+4.4 MB measured), leaving ≈12 MB of margin; 900 would leave ≈3 MB.
-    public static let defaultMaxSessions = 700
+    /// measured value. Measured on an iPhone 15 Plus, extension memory: ≈3.9 MB baseline; worst case = sessions opened in
+    /// a BURST, ≈43 KB each (900 = 42.5 MB, 700 = 33.9 MB, 500 = 25.3 MB, TCP ≈35 KB); 600 held UDP sessions + a 19 Mbit/s
+    /// stream + 16 bulk TCP streams = 29.9 MB (traffic adds almost nothing). Independently, the engine stopped creating
+    /// sessions at ≈1200 while memory sat at 37 MB — a limit that is not memory. iOS kills the whole VPN extension if it
+    /// exceeds its memory ceiling (≈50 MB documented; never reached in testing, max seen 42.5 MB), which is far worse than
+    /// dropping new flows, so: 800 keeps the worst measured case at ≈38 MB (≈23% margin) and ≈33% below the ≈1200
+    /// session ceiling. 900 also worked in testing but leaves ≈15% margin — change this one constant to use it.
+    public static let defaultMaxSessions = 800
     /// Idle time after which a UDP session is torn down (`--udp-timeout`; tun2proxy's default is 10). A new packet
     /// after that opens a NEW session, which the SOCKS5 relay sees as a new association with a new external port,
     /// so 10 s broke anything keyed on the source port (games, TURN, SIP) unless it sent keepalives more often than
-    /// that. 60 s covers the common 25–30 s keepalive intervals (WireGuard, STUN, Tailscale) with a 30 s cushion.
-    public static let defaultUDPTimeoutSeconds = 60
+    /// that. 120 s (the RFC 4787 minimum for NAT UDP mappings) covers the common 25–30 s keepalive intervals with a
+    /// large cushion. KNOWN LIMIT of the vendored engine: its virtual-DNS name→fake-address mapping expires 60 s after the
+    /// last lookup/new-session and is purged by the next DNS lookup from any app; a flow that resumes AFTER its session
+    /// ended (idle longer than this timeout) may then be forwarded to the raw fake 198.18.x.x address and go nowhere.
+    /// A longer timeout keeps sessions alive through longer pauses, so it shrinks how often that can happen.
+    public static let defaultUDPTimeoutSeconds = 120
 
     /// Outbound packets the engine wants delivered back into the tunnel
     /// (i.e. handed to `NEPacketTunnelFlow.writePackets`), with their protocol
