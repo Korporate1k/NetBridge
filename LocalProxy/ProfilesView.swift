@@ -60,6 +60,7 @@ struct ProfilesView: View {
             parts.append("+\(profile.additionalListeners.count) listener\(profile.additionalListeners.count == 1 ? "" : "s")")
         }
         if profile.dohEnabled { parts.append("DoH on") }
+        if profile.egressInterface != .automatic { parts.append("out: \(profile.egressInterface.label)") }
         if profile.backgroundKeepAliveRequested { parts.append("keep-alive") }
         return parts.joined(separator: " · ")
     }
@@ -74,7 +75,8 @@ struct ProfilesView: View {
             additionalListeners: server.additionalListeners,
             dohEnabled: UserDefaults.standard.bool(forKey: "doh.enabled"),
             dohUpstreamURL: UserDefaults.standard.string(forKey: "doh.upstreamURL") ?? "",
-            backgroundKeepAliveRequested: keeper.isKeepingAlive
+            backgroundKeepAliveRequested: keeper.isKeepingAlive,
+            egressInterface: EgressInterface.stored
         )
         store.save(profile)
     }
@@ -85,6 +87,7 @@ struct ProfilesView: View {
         server.additionalListeners = profile.additionalListeners
         UserDefaults.standard.set(profile.dohEnabled, forKey: "doh.enabled")
         UserDefaults.standard.set(profile.dohUpstreamURL, forKey: "doh.upstreamURL")
+        UserDefaults.standard.set(profile.egressInterface.rawValue, forKey: EgressInterface.defaultsKey)
         if profile.backgroundKeepAliveRequested, keeper.authorizationStatus == .authorizedAlways {
             keeper.start()
         } else if !profile.backgroundKeepAliveRequested {

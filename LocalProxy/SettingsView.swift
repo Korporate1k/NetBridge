@@ -21,6 +21,9 @@ struct SettingsView: View {
     @State private var newListenerPort = ""
     @State private var newListenerMode: ListenerMode = .httpOnly
     @AppStorage("doh.enabled") private var dohEnabled = false
+    @AppStorage(EgressInterface.defaultsKey) private var egressInterface = EgressInterface.automatic.rawValue
+    @AppStorage(EgressInterface.bindVPNKey) private var bindVPN = false
+    @State private var vpnInterfaceName: String? = VPNProbe.activeName()
     @AppStorage("doh.upstreamURL") private var dohUpstreamURL = "https://cloudflare-dns.com/dns-query"
     #if DEBUG
     // QA automation hook, same rationale/pattern as QA_TAB/QA_AUTOSTART in
@@ -46,6 +49,8 @@ struct SettingsView: View {
                     listenersSection
                 }
                 dohSection
+                egressSection
+                vpnSection
                 if remoteConfig.showUploadTest {
                     toolsSection
                 }
@@ -63,6 +68,8 @@ struct SettingsView: View {
             UpgradeView(purchases: purchases, dailyLimitBytes: server.dailyUsage.dailyLimitBytes)
         }
         .onAppear(perform: refreshDiagnostics)
+        .onChange(of: bindVPN) { on in server.egressPathChanged(on ? "Bind to VPN on" : "Bind to VPN off") }
+        .onChange(of: egressInterface) { value in server.egressPathChanged("outbound interface -> \(value)") }
         #if DEBUG
         .onAppear {
             if ProcessInfo.processInfo.environment["QA_PUSH_UPLOAD_TEST"] == "1" {
@@ -90,6 +97,7 @@ struct SettingsView: View {
     private func refreshDiagnostics() {
         logSize = DebugLog.logSizeBytes
         mirrorStatus = LogMirror.shared.status
+        vpnInterfaceName = VPNProbe.activeName()
     }
 
     private var proSection: some View {
@@ -210,6 +218,30 @@ struct SettingsView: View {
             Text("DNS")
         } footer: {
             Text("When on, hostnames are resolved via DNS-over-HTTPS instead of the system resolver before dialing out.")
+        }
+    }
+
+    private var egressSection: some View {
+        Section {
+            Picker("Outbound interface", selection: $egressInterface) {
+                ForEach(EgressInterface.pickerCases) { option in Text(option.label).tag(option.rawValue) }
+            }
+            .disabled(bindVPN)
+        } header: {
+            Text("Outbound Network")
+        } footer: {
+            Text("Which network the proxy uses to reach the internet. Automatic lets iOS decide. Choosing a specific type never falls back: if that network is unavailable, connections fail after a few seconds. Changing it closes open connections so clients reconnect on the new network. With custom DNS (DoH) on, the DNS lookup itself may still use another network, and UDP hostnames are resolved by system DNS.")
+        }
+    }
+
+    private var vpnSection: some View {
+        Section {
+            Toggle("Bind to VPN", isOn: $bindVPN)
+            InfoRow(label: "VPN interface", value: vpnInterfaceName ?? "None detected")
+        } header: {
+            Text("VPN")
+        } footer: {
+            Text("Sends the proxy's outbound traffic through the phone's active VPN tunnel instead of Wi-Fi or cellular, and overrides the choice above. Turn your VPN on first; if none is up, connections are refused rather than leaving unprotected. TCP and UDP both go through the tunnel. Open connections are closed when this changes or the VPN connects or drops, so nothing keeps running outside it. While this is on, custom DNS (DoH) is skipped and hostnames — TCP and UDP — are resolved inside the tunnel instead, so nothing is looked up outside it.")
         }
     }
 

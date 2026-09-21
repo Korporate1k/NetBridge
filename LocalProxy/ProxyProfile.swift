@@ -13,6 +13,27 @@ struct ProxyProfile: Codable, Identifiable, Equatable {
     var dohEnabled: Bool
     var dohUpstreamURL: String
     var backgroundKeepAliveRequested: Bool
+    var egressInterface: EgressInterface = .automatic
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, primaryPort, additionalListeners, dohEnabled, dohUpstreamURL, backgroundKeepAliveRequested, egressInterface
+    }
+}
+
+extension ProxyProfile {
+    /// Profiles saved before `egressInterface` existed have no such key; decode them as Automatic instead of failing the
+    /// whole `profiles.json`. (In an extension so the memberwise init stays available.)
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        primaryPort = try c.decode(Int.self, forKey: .primaryPort)
+        additionalListeners = try c.decode([ListenerConfig].self, forKey: .additionalListeners)
+        dohEnabled = try c.decode(Bool.self, forKey: .dohEnabled)
+        dohUpstreamURL = try c.decode(String.self, forKey: .dohUpstreamURL)
+        backgroundKeepAliveRequested = try c.decode(Bool.self, forKey: .backgroundKeepAliveRequested)
+        egressInterface = try c.decodeIfPresent(EgressInterface.self, forKey: .egressInterface) ?? .automatic
+    }
 }
 
 final class ProfileStore: ObservableObject {

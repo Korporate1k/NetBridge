@@ -46,7 +46,9 @@ final class DoHResolver {
     /// callers should fall back to dialing `host` directly (system DNS) in
     /// every `nil` case.
     func resolve(_ host: String, completion: @escaping (String?) -> Void) {
-        guard isEnabled, !isIPv4Literal(host), let upstream = upstreamURL else {
+        // URLSession can't be bound to the VPN tunnel, so a DoH query would leave outside it (a DNS leak). While Bind to VPN
+        // is on, skip DoH: the dial passes the hostname to NWConnection, which resolves it inside the bound path.
+        guard isEnabled, EgressInterface.current != .vpn, !isIPv4Literal(host), let upstream = upstreamURL else {
             completion(nil)
             return
         }

@@ -212,8 +212,7 @@ final class UDPRelay {
         }
         pendingResolution[name] = PendingLookup(items: [(payload, port)], bytes: payload.count)
         let tunnelID = id
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let address = EgressSocket.resolve(name)
+        resolveHostname(name, port: port) { [weak self] address in
             self?.queue.async {
                 guard let self = self, !self.cancelled else { return }
                 let waiting = self.pendingResolution.removeValue(forKey: name)?.items ?? []
@@ -228,6 +227,44 @@ final class UDPRelay {
                 }
             }
         }
+    }
+
+    /// Resolves a UDP destination hostname. Normally `getaddrinfo` off-queue. With Bind to VPN on, `getaddrinfo` can't be bound
+    /// to the tunnel (the lookup would leave outside it — a DNS leak), so an `NWConnection` with the same interface requirement
+    /// does the resolution and its resolved remote endpoint is read back: the lookup runs inside the tunnel path. Completion
+    /// may run on any thread.
+    private func resolveHostname(_ name: String, port: UInt16, completion: @escaping (sockaddr_storage?) -> Void) {
+        guard EgressInterface.current == .vpn, let nwPort = NWEndpoint.Port(rawValue: port == 0 ? 53 : port) else {
+            DispatchQueue.global(qos: .userInitiated).async { completion(EgressSocket.resolve(name)) }
+            return
+        }
+        let connection = NWConnection(host: NWEndpoint.Host(name), port: nwPort, using: EgressTTL.udp)
+        let gate = ResolveGate()
+        let tunnelID = id
+        func finish(_ address: sockaddr_storage?, _ note: String) {
+            guard gate.claim() else { return }
+            connection.cancel()
+            DebugLog.important("udp", tunnel: tunnelID, "UDP ASSOCIATE resolved \(name) inside the VPN path: \(note)")
+            completion(address)
+        }
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                if case let .hostPort(host, _)? = connection.currentPath?.remoteEndpoint {
+                    var text = "\(host)"
+                    if let scope = text.firstIndex(of: "%") { text = String(text[..<scope]) }
+                    finish(EgressSocket.literalAddress(host: text, port: 0), text)
+                } else {
+                    finish(nil, "no resolved endpoint")
+                }
+            case .failed(let error):
+                finish(nil, "failed \(ErrorDescription.describe(error))")
+            default:
+                break
+            }
+        }
+        connection.start(queue: queue)
+        queue.asyncAfter(deadline: .now() + 4) { finish(nil, "timed out") }
     }
 
     private func send(_ payload: Data, to address: sockaddr_storage, label: String) {
@@ -382,6 +419,9 @@ private struct PendingLookup {
 /// the relay (`EgressTTL.hopLimit`).
 private final class EgressSocket {
     private let fd: Int32
+    /// Interface index the socket is bound to (Bind-to-VPN); re-checked so a reconnected tunnel doesn't strand the socket.
+    private var boundIndex: UInt32?
+    private var lastRebindCheck = DispatchTime.now()
     private let source: DispatchSourceRead
     let localPort: UInt16
 
@@ -406,6 +446,20 @@ private final class EgressSocket {
         var off: Int32 = 0
         let intSize = socklen_t(MemoryLayout<Int32>.size)
         setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, intSize)
+        // Pinned outbound interface. IPV6_BOUND_IF alone is enough on this dual-stack socket — it also scopes IPv4-mapped
+        // destinations (verified: bound to lo0, a send to ::ffff:8.8.8.8 fails ENETUNREACH), whereas IP_BOUND_IF on an AF_INET6
+        // socket is rejected with EINVAL. If a type is pinned but no such interface is up, refuse to create the socket
+        // (fail closed) rather than egress over a different interface.
+        var initialIndex: UInt32?
+        if EgressInterface.current != .automatic {
+            guard var index = EgressInterface.boundInterfaceIndex(),
+                  setsockopt(fd, IPPROTO_IPV6, IPV6_BOUND_IF, &index, intSize) == 0 else {
+                Darwin.close(fd)
+                errno = ENETDOWN
+                return nil
+            }
+            initialIndex = index
+        }
         // Without SO_BROADCAST, sendto() to a broadcast address fails with EACCES.
         setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, intSize)
         var hops = Int32(EgressTTL.hopLimit)
@@ -466,12 +520,14 @@ private final class EgressSocket {
         }
         self.fd = fd
         self.source = source
+        self.boundIndex = initialIndex
         source.resume()
     }
 
     /// Returns 0 on success, otherwise the `errno` from `sendto`.
     func send(_ payload: Data, to address: sockaddr_storage) -> Int32 {
         guard !payload.isEmpty else { return 0 }
+        rebindIfTunnelChanged()
         var address = EgressSocket.toDualStack(address)
         let length = socklen_t(address.ss_len)
         let sent = payload.withUnsafeBytes { raw in
@@ -482,6 +538,20 @@ private final class EgressSocket {
             }
         }
         return sent < 0 ? errno : 0
+    }
+
+    /// When bound to the VPN, a tunnel that reconnects can come back as a different interface index, which would leave this
+    /// socket bound to a dead one for the rest of the association. Cheap check (at most every 250 ms): rebind if it changed.
+    private func rebindIfTunnelChanged() {
+        guard EgressInterface.current == .vpn else { return }
+        let now = DispatchTime.now()
+        guard now.uptimeNanoseconds &- lastRebindCheck.uptimeNanoseconds > 250_000_000 else { return }
+        lastRebindCheck = now
+        guard var index = EgressInterface.boundInterfaceIndex(), index != boundIndex else { return }
+        if setsockopt(fd, IPPROTO_IPV6, IPV6_BOUND_IF, &index, socklen_t(MemoryLayout<UInt32>.size)) == 0 {
+            DebugLog.important("udp", "UDP egress socket re-bound to the reconnected VPN tunnel (interface index \(boundIndex.map(String.init) ?? "none") -> \(index))")
+            boundIndex = index
+        }
     }
 
     func close() {
@@ -505,10 +575,16 @@ private final class EgressSocket {
                 p.pointee.sin6_family = sa_family_t(AF_INET6)
                 p.pointee.sin6_port = v4Port
                 withUnsafeMutableBytes(of: &p.pointee.sin6_addr) { bytes in
-                    for i in 0..<10 { bytes[i] = 0 }
-                    bytes[10] = 0xff
-                    bytes[11] = 0xff
-                    withUnsafeBytes(of: v4Addr) { for i in 0..<4 { bytes[12 + i] = $0[i] } }
+                    let v4 = withUnsafeBytes(of: v4Addr) { Array($0) }
+                    // Cellular pin on an IPv6-only carrier: IPv4-mapped has no route there, so use NAT64 (64:ff9b::/96).
+                    if NAT64.synthesizable(v4), NAT64.isActive {
+                        for (i, byte) in NAT64.synthesizedBytes(v4).enumerated() { bytes[i] = byte }
+                    } else {
+                        for i in 0..<10 { bytes[i] = 0 }
+                        bytes[10] = 0xff
+                        bytes[11] = 0xff
+                        for i in 0..<4 { bytes[12 + i] = v4[i] }
+                    }
                 }
             }
         }
@@ -600,6 +676,10 @@ private final class EgressSocket {
                     // A dual-stack socket reports IPv4 peers as ::ffff:a.b.c.d — hand back plain dotted IPv4 so the
                     // SOCKS5 reply header carries ATYP 1 (what clients expect for an IPv4 source).
                     let b = withUnsafeBytes(of: addr) { Array($0) }
+                    // Replies from a NAT64-synthesized destination: report the original IPv4 source to the client.
+                    if NAT64.isActive, let v4 = NAT64.embeddedIPv4(from: b) {
+                        return ("\(v4[0]).\(v4[1]).\(v4[2]).\(v4[3])", port)
+                    }
                     if b[0..<10].allSatisfy({ $0 == 0 }), b[10] == 0xff, b[11] == 0xff {
                         return ("\(b[12]).\(b[13]).\(b[14]).\(b[15])", port)
                     }
@@ -610,5 +690,17 @@ private final class EgressSocket {
         default:
             return nil
         }
+    }
+}
+
+/// One-shot latch so a hostname resolution reports exactly once (state handler vs. timeout).
+private final class ResolveGate {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
     }
 }

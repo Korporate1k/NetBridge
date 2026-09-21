@@ -37,20 +37,68 @@ extension Tunnel {
             modeName = "HTTP-forward"
             onActivity?("HTTP forward \(host):\(port)")
         }
-        // Resolved once (if DoH is enabled) and reused across retry attempts,
-        // rather than re-resolving on every attempt. `host` stays what's
-        // logged/displayed throughout; only the actual dial target changes.
-        DoHResolver.shared.resolve(host) { [weak self] resolvedIP in
-            guard let self = self else { return }
-            self.queue.async {
-                guard !self.cleanedUp else { return }
-                if let resolvedIP = resolvedIP {
-                    DebugLog.debug("dns", tunnel: self.id, "DoH resolved \(host) -> \(resolvedIP)")
+        func startDial() {
+            // Resolved once (if DoH is enabled) and reused across retry attempts,
+            // rather than re-resolving on every attempt. `host` stays what's
+            // logged/displayed throughout; only the actual dial target changes.
+            DoHResolver.shared.resolve(host) { [weak self] resolvedIP in
+                guard let self = self else { return }
+                let launch: (String) -> Void = { dialHost in
+                    self.queue.async {
+                        guard !self.cleanedUp else { return }
+                        if let resolvedIP = resolvedIP {
+                            DebugLog.debug("dns", tunnel: self.id, "DoH resolved \(host) -> \(resolvedIP)")
+                        }
+                        if dialHost != (resolvedIP ?? host) {
+                            DebugLog.important("dns", tunnel: self.id, "NAT64 (cellular pin): \(host) -> dial \(dialHost)")
+                        }
+                        self.connectOutbound(dialHost: dialHost, host: host, port: serverPort, request: request, attempt: 0)
+                    }
                 }
-                self.connectOutbound(dialHost: resolvedIP ?? host, host: host, port: serverPort, request: request, attempt: 0)
+                let target = resolvedIP ?? host
+                if EgressInterface.current == .cellular {
+                    // NAT64 lookup may block in getaddrinfo, so keep it off the tunnel queue.
+                    DispatchQueue.global(qos: .userInitiated).async { launch(NAT64.dialHost(for: target)) }
+                } else {
+                    launch(target)
+                }
             }
+    
         }
+        // Bind-to-VPN with no tunnel right now. The tunnel often comes straight back (the VPN client reconnecting), so wait a
+        // few seconds for it rather than failing every new connection; refuse only if it stays gone (never dial outside it).
+        if EgressInterface.current == .vpn, VPNProbe.activeName() == nil {
+            DebugLog.important("server", tunnel: id, "Bind to VPN is on but no VPN tunnel is up — waiting up to \(Int(Self.vpnReconnectWaitSeconds))s for it before \(host):\(port)")
+            let deadline = DispatchTime.now() + Self.vpnReconnectWaitSeconds
+            func poll() {
+                guard !cleanedUp else { return }
+                if VPNProbe.activeName() != nil {
+                    DebugLog.important("server", tunnel: id, "VPN tunnel is back — dialing \(host):\(port)")
+                    startDial()
+                    return
+                }
+                if DispatchTime.now() >= deadline {
+                    DebugLog.important("server", tunnel: id, "no VPN tunnel after \(Int(Self.vpnReconnectWaitSeconds))s — refusing \(host):\(port)")
+                    onActivity?("outbound \(host):\(port) FAILED: no VPN active")
+                    if case .connect(_, _, _, let meta) = request, let failureReply = meta.failureReply {
+                        client.send(content: failureReply, completion: .contentProcessed { _ in })
+                    }
+                    cleanup(.retriesExhausted("Bind to VPN is on but no VPN is active"))
+                    return
+                }
+                queue.asyncAfter(deadline: .now() + 0.25) { poll() }
+            }
+            poll()
+            return
+        }
+        startDial()
     }
+
+    /// How long a new dial waits for a reconnecting VPN tunnel before it is refused.
+    private static var vpnReconnectWaitSeconds: Double { 6 }
+
+    /// How long a dial may sit in `.waiting` when an outbound interface type is pinned before it is failed.
+    private static var pinnedInterfaceWaitSeconds: Double { 5 }
 
     private func connectOutbound(dialHost: String, host: String, port: NWEndpoint.Port, request: ProxyRequest, attempt: Int) {
         let server = transport.dial(host: dialHost, port: port)
@@ -68,6 +116,21 @@ extension Tunnel {
         server.betterPathUpdateHandler = { [weak self] hasBetter in
             guard let self = self else { return }
             DebugLog.important("server", tunnel: self.id, "BETTER PATH available=\(hasBetter) \(self.progressText())")
+        }
+
+        // NWConnection sits in `.waiting` (instead of failing) when the destination name doesn't exist or the pinned
+        // outbound interface is down, so the client would hang. `abortDial` fails the dial with a real reason and the
+        // protocol's failure reply. State updates all run on `queue`.
+        var waitTimerArmed = false
+        var lastWaitError: NWError?
+        let abortDial: (String) -> Void = { [weak self, weak server] reason in
+            guard let self = self, let server = server, self.server === server, !self.didOpen, !self.cleanedUp else { return }
+            DebugLog.important("server", tunnel: self.id, "\(reason) — failing \(host):\(port)")
+            self.onActivity?("outbound \(host):\(port) FAILED: \(reason)")
+            if case .connect(_, _, _, let meta) = request, let failureReply = meta.failureReply {
+                self.client.send(content: failureReply, completion: .contentProcessed { _ in })
+            }
+            self.cleanup(.retriesExhausted(reason))
         }
 
         server.stateUpdateHandler = { [weak self] state in
@@ -118,6 +181,28 @@ extension Tunnel {
                 }
             case .waiting(let error):
                 DebugLog.important("server", tunnel: self.id, "state WAITING \(ErrorDescription.describe(error)) attempt=\(attempt) \(self.progressText()) path: \(PathDescription.describe(server.currentPath))")
+                lastWaitError = error
+                // kDNSServiceErr_NoSuchRecord (-65554) / NoSuchName (-65538): the name has no address at all, so waiting can
+                // never succeed — fail now rather than hang the client (and don't blame the network interface).
+                if case .dns(let code) = error, code == -65554 || code == -65538 {
+                    abortDial("DNS: \(host) does not exist")
+                    return
+                }
+                let pinned = EgressInterface.current
+                if pinned != .automatic, !waitTimerArmed {
+                    waitTimerArmed = true
+                    self.queue.asyncAfter(deadline: .now() + Self.pinnedInterfaceWaitSeconds) {
+                        if case .dns? = lastWaitError {
+                            abortDial("DNS lookup for \(host) failed over \(pinned.label) after \(Self.pinnedInterfaceWaitSeconds)s")
+                        } else if pinned == .vpn {
+                            // The tunnel exists (or Bind to VPN would have refused up front) but isn't passing traffic — usually
+                            // a brief drop while it reconnects — so don't claim the interface is missing.
+                            abortDial("VPN tunnel unavailable after \(Self.pinnedInterfaceWaitSeconds)s")
+                        } else {
+                            abortDial("no \(pinned.label) interface available after \(Self.pinnedInterfaceWaitSeconds)s")
+                        }
+                    }
+                }
             case .failed(let error):
                 let errorText = ErrorDescription.describe(error)
                 DebugLog.important("server", tunnel: self.id, "state FAILED \(errorText) attempt=\(attempt) didOpen=\(self.didOpen) \(self.progressText()) openTunnels=\(self.openTunnelCount()) path: \(PathDescription.describe(server.currentPath))")

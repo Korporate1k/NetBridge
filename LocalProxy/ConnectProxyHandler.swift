@@ -23,6 +23,7 @@ final class Tunnel {
         case receiveError(direction: String, error: String)
         case sendError(direction: String, error: String)
         case proxyStopped
+        case egressChanged(String)
         case udpAssociateClosed(String)
         case authenticationFailed
 
@@ -39,6 +40,7 @@ final class Tunnel {
             case .receiveError(let dir, let e): return "receiveError(\(dir): \(e))"
             case .sendError(let dir, let e): return "sendError(\(dir): \(e))"
             case .proxyStopped: return "proxyStopped"
+            case .egressChanged(let why): return "egressChanged(\(why))"
             case .udpAssociateClosed(let d): return "udpAssociateClosed(\(d))"
             case .authenticationFailed: return "authenticationFailed (SOCKS5 RFC1929 auth rejected)"
             }
@@ -163,8 +165,8 @@ final class Tunnel {
         }
     }
 
-    func cancel() {
-        queue.async { self.cleanup(.proxyStopped) }
+    func cancel(reason: CloseReason = .proxyStopped) {
+        queue.async { self.cleanup(reason) }
     }
 
     // MARK: - CONNECT request

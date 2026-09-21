@@ -141,6 +141,10 @@ final class ProxyServer: ObservableObject {
     init(port: Int = 8080) {
         self.port = port
         NetworkDiagnostics.shared.openTunnelCount = { [weak self] in self?.openTunnelCount() ?? 0 }
+        EgressInterface.startWatching()
+        NotificationCenter.default.addObserver(forName: EgressInterface.vpnChangedNotification, object: nil, queue: nil) { [weak self] note in
+            self?.vpnTunnelChanged(note)
+        }
         loadLastSettings()
         refreshAddresses()
         addressTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -215,7 +219,7 @@ final class ProxyServer: ObservableObject {
             self.isStarting = true
             defer { self.isStarting = false }
 
-            DebugLog.important("listener", "start requested, primary port \(self.port), \(self.additionalListeners.count) additional listener(s)")
+            DebugLog.important("listener", "start requested, primary port \(self.port), \(self.additionalListeners.count) additional listener(s), outbound interface \(EgressInterface.current.label)\(EgressInterface.current == .cellular ? " (NAT64 \(NAT64.isActive ? "active — cellular is IPv6-only" : "inactive"))" : "")")
             let permissionStart = DispatchTime.now()
             let permission = self.requestLocalNetworkPermission()
             let permissionMs = Double(DispatchTime.now().uptimeNanoseconds - permissionStart.uptimeNanoseconds) / 1_000_000
@@ -445,9 +449,67 @@ final class ProxyServer: ObservableObject {
         tunnelsLock.lock(); tunnels.removeValue(forKey: ObjectIdentifier(tunnel)); tunnelsLock.unlock()
     }
 
-    private func closeAllTunnels() {
+    private func closeAllTunnels(reason: Tunnel.CloseReason = .proxyStopped) {
         tunnelsLock.lock(); let snapshot = Array(tunnels.values); tunnelsLock.unlock()
-        for tunnel in snapshot { tunnel.cancel() }
+        for tunnel in snapshot { tunnel.cancel(reason: reason) }
+    }
+
+    /// iOS does not end connections that already exist when a VPN starts — they keep running outside the tunnel (the
+    /// "iOS VPNs leak" problem). The proxy owns its sockets, so it does what a VPN client can't: when the outbound network
+    /// setting changes or the VPN tunnel appears/disappears, close every open connection so clients reconnect on the new path.
+    func egressPathChanged(_ why: String) {
+        guard isRunning else { return }
+        let count = openTunnelCount()
+        guard count > 0 else { return }
+        DebugLog.important("listener", "egress changed (\(why)) — closing \(count) open tunnel(s) so clients reconnect on the new path")
+        closeAllTunnels(reason: .egressChanged(why))
+    }
+
+    // VPN tunnel changes. A VPN client reconnecting (seen on the phone: the WARP tunnel vanishes and returns ~0.7 s later,
+    // every 40-80 s, whenever the Wi-Fi interface flaps) must not kill every proxied connection. So a tunnel that goes away
+    // gets a grace period: if the SAME tunnel is back in time nothing closes; only a different tunnel, a brand-new VPN start
+    // (the leak case), or a tunnel that stays gone closes the open connections.
+    private static let vpnGraceSeconds = 10.0
+    private var vpnGoneName: String?
+    private var vpnGoneAt = Date.distantPast
+    private var vpnGraceWork: DispatchWorkItem?
+
+    private func vpnTunnelChanged(_ note: Notification) {
+        let old = note.userInfo?["old"] as? String
+        let new = note.userInfo?["new"] as? String
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            switch (old, new) {
+            case (let gone?, nil):
+                // Tunnel disappeared: start the grace timer instead of closing.
+                self.vpnGoneName = gone
+                self.vpnGoneAt = Date()
+                self.vpnGraceWork?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self = self else { return }
+                    self.vpnGoneName = nil
+                    self.egressPathChanged("VPN tunnel \(gone) gone for over \(Int(Self.vpnGraceSeconds))s")
+                }
+                self.vpnGraceWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.vpnGraceSeconds, execute: work)
+                DebugLog.important("listener", "VPN tunnel \(gone) went away — holding \(self.openTunnelCount()) open connection(s) for up to \(Int(Self.vpnGraceSeconds))s in case it reconnects")
+            case (nil, let back?):
+                if let gone = self.vpnGoneName, gone == back {
+                    self.vpnGraceWork?.cancel()
+                    self.vpnGraceWork = nil
+                    self.vpnGoneName = nil
+                    DebugLog.important("listener", "VPN tunnel \(back) reconnected after \(String(format: "%.1f", Date().timeIntervalSince(self.vpnGoneAt)))s — keeping \(self.openTunnelCount()) open connection(s)")
+                } else {
+                    // A VPN that wasn't there before (or a different one): existing connections are outside it — close them.
+                    self.vpnGraceWork?.cancel(); self.vpnGraceWork = nil; self.vpnGoneName = nil
+                    self.egressPathChanged("VPN tunnel \(back) started")
+                }
+            default:
+                // One tunnel replaced by another.
+                self.vpnGraceWork?.cancel(); self.vpnGraceWork = nil; self.vpnGoneName = nil
+                self.egressPathChanged("VPN tunnel \(old ?? "none") -> \(new ?? "none")")
+            }
+        }
     }
 
     private enum PermissionResult { case granted, denied, timedOut }
