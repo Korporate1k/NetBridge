@@ -1,0 +1,11 @@
+[package]
+name = "flaky"
+version = "0.0.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+ipstack = { path = "IPSTACK_PATH" }
+etherparse = { version = "0.20", features = ["std"], default-features = false }
+tokio = { version = "1.52", features = ["macros", "rt", "time", "io-util", "sync"], default-features = false }

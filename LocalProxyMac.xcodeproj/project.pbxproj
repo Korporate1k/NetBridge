@@ -1,0 +1,575 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		14D7EFAAC1E75114750C1073 /* MacDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA46821621685A7639CEF711 /* MacDashboardView.swift */; };
+		268A56A9460BD34E041B2D54 /* Socks5Client in Frameworks */ = {isa = PBXBuildFile; productRef = D9B01E20E97CD64539AC4C9A /* Socks5Client */; };
+		43CA442F270E33B46DBB4C92 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A1B8EAB479C9F97C01F8D /* KeychainStore.swift */; };
+		4FEB298616930A50D11A2ACF /* MacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD3D67B9E6634F968302C7F /* MacRootView.swift */; };
+		69A7637D83960EDA1549852A /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08CEF2C64D036A25EFCB561 /* PacketTunnelProvider.swift */; };
+		8954BF77BA4CDC835BF28BA6 /* ClientTunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A800F712EDBC854707B457 /* ClientTunnelManager.swift */; };
+		8AA5FF102F212C5E027174AA /* LWIPTunnelEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 92D9BD30119678E0949780B4 /* LWIPTunnelEngine */; };
+		9A88BBBC066DA0AB37EE0DA6 /* LocalProxyMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5463A1235A6C8FFEB7F6A642 /* LocalProxyMacApp.swift */; };
+		9DE6A20A3ACCE962D06B302E /* MacSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23F366C6189C90C431905789 /* MacSupport.swift */; };
+		A0BAB0310088C20D5BC53153 /* MacClientView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61201842F3385F2B13B8E6F /* MacClientView.swift */; };
+		B20B491CC0A2C41EF09807F8 /* MacClientModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602225F4599777BC5742AA5B /* MacClientModel.swift */; };
+		B5F04049AD7EED751DBF2960 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EB47A6EC8B3461F5E380E97F /* Assets.xcassets */; };
+		BC53F965266AD3D067C599B6 /* QRSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B9B0FF43DE181275BF61E9 /* QRSupport.swift */; };
+		C62BBF42E7CC47382186C0FE /* TunnelStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69CEF7BFFCFF6AFD071317D /* TunnelStats.swift */; };
+		CA0B341381C064E1ADA7F149 /* LocalProxyMacTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 514F354E8C07AA007D31CC36 /* LocalProxyMacTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CF8F3F460E4EE5ACD68B1631 /* Socks5ClientTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17F9338F451DED5E1915259 /* Socks5ClientTestView.swift */; };
+		E5F9B0C811DF7F343CCFF693 /* ClientConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958570C4A98080BF854BC208 /* ClientConfiguration.swift */; };
+		F44ACF97D57A4461E66609BF /* TunnelStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69CEF7BFFCFF6AFD071317D /* TunnelStats.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CB6CCCDBE4D79D75F312BA77 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4F14583ED9579745140367DB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E5836AE3CD58433C63A38C0C;
+			remoteInfo = LocalProxyMacTunnel;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		299B25EFDD5E991AFC4CE377 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CA0B341381C064E1ADA7F149 /* LocalProxyMacTunnel.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		032A1B8EAB479C9F97C01F8D /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		23F366C6189C90C431905789 /* MacSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSupport.swift; sourceTree = "<group>"; };
+		30A800F712EDBC854707B457 /* ClientTunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientTunnelManager.swift; sourceTree = "<group>"; };
+		514F354E8C07AA007D31CC36 /* LocalProxyMacTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LocalProxyMacTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		5463A1235A6C8FFEB7F6A642 /* LocalProxyMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProxyMacApp.swift; sourceTree = "<group>"; };
+		59181F99DDA7EA01B62A67E8 /* LWIPTunnelEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LWIPTunnelEngine; path = LWIPTunnelEngine; sourceTree = SOURCE_ROOT; };
+		602225F4599777BC5742AA5B /* MacClientModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacClientModel.swift; sourceTree = "<group>"; };
+		72B9B0FF43DE181275BF61E9 /* QRSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRSupport.swift; sourceTree = "<group>"; };
+		8CD3D67B9E6634F968302C7F /* MacRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRootView.swift; sourceTree = "<group>"; };
+		958570C4A98080BF854BC208 /* ClientConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientConfiguration.swift; sourceTree = "<group>"; };
+		AA46821621685A7639CEF711 /* MacDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardView.swift; sourceTree = "<group>"; };
+		B17F9338F451DED5E1915259 /* Socks5ClientTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5ClientTestView.swift; sourceTree = "<group>"; };
+		B69CEF7BFFCFF6AFD071317D /* TunnelStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelStats.swift; sourceTree = "<group>"; };
+		C61201842F3385F2B13B8E6F /* MacClientView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacClientView.swift; sourceTree = "<group>"; };
+		E3EC4CF04AE115B4CB1E6336 /* LocalProxyMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalProxyMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EB47A6EC8B3461F5E380E97F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		EC587F06B3E9C120E6A8D81B /* Socks5Client */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Socks5Client; path = Socks5Client; sourceTree = SOURCE_ROOT; };
+		F08CEF2C64D036A25EFCB561 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		71DD6E8A7918C62E133FA03E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				268A56A9460BD34E041B2D54 /* Socks5Client in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EBD97FC295EDF7DB886CFEA0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8AA5FF102F212C5E027174AA /* LWIPTunnelEngine in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		100B8C8072044C1025D31DBD /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B69CEF7BFFCFF6AFD071317D /* TunnelStats.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		297CA3A146EE8183919A0FB0 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				59181F99DDA7EA01B62A67E8 /* LWIPTunnelEngine */,
+				EC587F06B3E9C120E6A8D81B /* Socks5Client */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		44B63935C6F47D5D89948AB1 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				5463A1235A6C8FFEB7F6A642 /* LocalProxyMacApp.swift */,
+				602225F4599777BC5742AA5B /* MacClientModel.swift */,
+				C61201842F3385F2B13B8E6F /* MacClientView.swift */,
+				AA46821621685A7639CEF711 /* MacDashboardView.swift */,
+				8CD3D67B9E6634F968302C7F /* MacRootView.swift */,
+				23F366C6189C90C431905789 /* MacSupport.swift */,
+				72B9B0FF43DE181275BF61E9 /* QRSupport.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		79BD7B7FBA17385D355FC2B6 = {
+			isa = PBXGroup;
+			children = (
+				7C89E44F33823A2BB31BF729 /* LocalProxy */,
+				F734E5EE2579A0F16792341D /* LocalProxyMac */,
+				F65A49A1BE108295D82A7B8B /* LocalProxyTunnel */,
+				297CA3A146EE8183919A0FB0 /* Packages */,
+				D77A9C3697B4891755A9F858 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		7C89E44F33823A2BB31BF729 /* LocalProxy */ = {
+			isa = PBXGroup;
+			children = (
+				958570C4A98080BF854BC208 /* ClientConfiguration.swift */,
+				30A800F712EDBC854707B457 /* ClientTunnelManager.swift */,
+				032A1B8EAB479C9F97C01F8D /* KeychainStore.swift */,
+				B17F9338F451DED5E1915259 /* Socks5ClientTestView.swift */,
+			);
+			path = LocalProxy;
+			sourceTree = "<group>";
+		};
+		D77A9C3697B4891755A9F858 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E3EC4CF04AE115B4CB1E6336 /* LocalProxyMac.app */,
+				514F354E8C07AA007D31CC36 /* LocalProxyMacTunnel.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		F65A49A1BE108295D82A7B8B /* LocalProxyTunnel */ = {
+			isa = PBXGroup;
+			children = (
+				F08CEF2C64D036A25EFCB561 /* PacketTunnelProvider.swift */,
+			);
+			path = LocalProxyTunnel;
+			sourceTree = "<group>";
+		};
+		F734E5EE2579A0F16792341D /* LocalProxyMac */ = {
+			isa = PBXGroup;
+			children = (
+				EB47A6EC8B3461F5E380E97F /* Assets.xcassets */,
+				100B8C8072044C1025D31DBD /* Shared */,
+				44B63935C6F47D5D89948AB1 /* Sources */,
+			);
+			path = LocalProxyMac;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E5836AE3CD58433C63A38C0C /* LocalProxyMacTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5E41694B31988F0CE39A8E5 /* Build configuration list for PBXNativeTarget "LocalProxyMacTunnel" */;
+			buildPhases = (
+				9D560C28094392CCF73861B0 /* Sources */,
+				EBD97FC295EDF7DB886CFEA0 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LocalProxyMacTunnel;
+			packageProductDependencies = (
+				92D9BD30119678E0949780B4 /* LWIPTunnelEngine */,
+			);
+			productName = LocalProxyMacTunnel;
+			productReference = 514F354E8C07AA007D31CC36 /* LocalProxyMacTunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		FAA47AB099F95128F68638C5 /* LocalProxyMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5CF2BDC8D78166A4A362842D /* Build configuration list for PBXNativeTarget "LocalProxyMac" */;
+			buildPhases = (
+				0CC4192DB368705A323A63E5 /* Sources */,
+				2DCD29D176A8114E72289C0C /* Resources */,
+				71DD6E8A7918C62E133FA03E /* Frameworks */,
+				299B25EFDD5E991AFC4CE377 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A2B69FFB9181D6686A9AD0FE /* PBXTargetDependency */,
+			);
+			name = LocalProxyMac;
+			packageProductDependencies = (
+				D9B01E20E97CD64539AC4C9A /* Socks5Client */,
+			);
+			productName = LocalProxyMac;
+			productReference = E3EC4CF04AE115B4CB1E6336 /* LocalProxyMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4F14583ED9579745140367DB /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					E5836AE3CD58433C63A38C0C = {
+						DevelopmentTeam = DS8AMC8BSV;
+						ProvisioningStyle = Automatic;
+					};
+					FAA47AB099F95128F68638C5 = {
+						DevelopmentTeam = DS8AMC8BSV;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = F256091D14B7174F3E307F0E /* Build configuration list for PBXProject "LocalProxyMac" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 79BD7B7FBA17385D355FC2B6;
+			packageReferences = (
+				CAD6E0AF322EF89E932F98D2 /* XCLocalSwiftPackageReference "LWIPTunnelEngine" */,
+				2665E18429F40DF1F62395FD /* XCLocalSwiftPackageReference "Socks5Client" */,
+			);
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				FAA47AB099F95128F68638C5 /* LocalProxyMac */,
+				E5836AE3CD58433C63A38C0C /* LocalProxyMacTunnel */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2DCD29D176A8114E72289C0C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B5F04049AD7EED751DBF2960 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0CC4192DB368705A323A63E5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E5F9B0C811DF7F343CCFF693 /* ClientConfiguration.swift in Sources */,
+				8954BF77BA4CDC835BF28BA6 /* ClientTunnelManager.swift in Sources */,
+				43CA442F270E33B46DBB4C92 /* KeychainStore.swift in Sources */,
+				9A88BBBC066DA0AB37EE0DA6 /* LocalProxyMacApp.swift in Sources */,
+				B20B491CC0A2C41EF09807F8 /* MacClientModel.swift in Sources */,
+				A0BAB0310088C20D5BC53153 /* MacClientView.swift in Sources */,
+				14D7EFAAC1E75114750C1073 /* MacDashboardView.swift in Sources */,
+				4FEB298616930A50D11A2ACF /* MacRootView.swift in Sources */,
+				9DE6A20A3ACCE962D06B302E /* MacSupport.swift in Sources */,
+				BC53F965266AD3D067C599B6 /* QRSupport.swift in Sources */,
+				CF8F3F460E4EE5ACD68B1631 /* Socks5ClientTestView.swift in Sources */,
+				F44ACF97D57A4461E66609BF /* TunnelStats.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9D560C28094392CCF73861B0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				69A7637D83960EDA1549852A /* PacketTunnelProvider.swift in Sources */,
+				C62BBF42E7CC47382186C0FE /* TunnelStats.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A2B69FFB9181D6686A9AD0FE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E5836AE3CD58433C63A38C0C /* LocalProxyMacTunnel */;
+			targetProxy = CB6CCCDBE4D79D75F312BA77 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1900570CF6C913DD34F82F21 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LocalProxyMac/LocalProxyMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LocalProxyMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy;
+				PRODUCT_MODULE_NAME = LocalProxyMac;
+				PRODUCT_NAME = NetBridge;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		571900942904A0E291701491 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		80676E1F24C55264213EE5A1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = LocalProxyMacTunnel/LocalProxyMacTunnel.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LocalProxyMacTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy.Tunnel;
+				PRODUCT_MODULE_NAME = LocalProxyTunnel;
+				PRODUCT_NAME = LocalProxyTunnel;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		8E2A08863FBBCAD3EE4A9F4A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		90C6B46B1B6D5A8D7861ACFF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = LocalProxyMacTunnel/LocalProxyMacTunnel.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LocalProxyMacTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy.Tunnel;
+				PRODUCT_MODULE_NAME = LocalProxyTunnel;
+				PRODUCT_NAME = LocalProxyTunnel;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		CDCB548A2837642F1B15E3CD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LocalProxyMac/LocalProxyMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LocalProxyMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy;
+				PRODUCT_MODULE_NAME = LocalProxyMac;
+				PRODUCT_NAME = NetBridge;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5CF2BDC8D78166A4A362842D /* Build configuration list for PBXNativeTarget "LocalProxyMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1900570CF6C913DD34F82F21 /* Debug */,
+				CDCB548A2837642F1B15E3CD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B5E41694B31988F0CE39A8E5 /* Build configuration list for PBXNativeTarget "LocalProxyMacTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				90C6B46B1B6D5A8D7861ACFF /* Debug */,
+				80676E1F24C55264213EE5A1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F256091D14B7174F3E307F0E /* Build configuration list for PBXProject "LocalProxyMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				571900942904A0E291701491 /* Debug */,
+				8E2A08863FBBCAD3EE4A9F4A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		2665E18429F40DF1F62395FD /* XCLocalSwiftPackageReference "Socks5Client" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Socks5Client;
+		};
+		CAD6E0AF322EF89E932F98D2 /* XCLocalSwiftPackageReference "LWIPTunnelEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LWIPTunnelEngine;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		92D9BD30119678E0949780B4 /* LWIPTunnelEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LWIPTunnelEngine;
+		};
+		D9B01E20E97CD64539AC4C9A /* Socks5Client */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Socks5Client;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 4F14583ED9579745140367DB /* Project object */;
+}

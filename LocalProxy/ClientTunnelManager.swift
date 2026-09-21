@@ -25,7 +25,13 @@ final class ClientTunnelManager: ObservableObject {
     /// Runtime access-group value — see the comment on `KeychainStore`'s
     /// `accessGroup` parameter for why this is a literal rather than
     /// derived from `$(AppIdentifierPrefix)`.
-    private static let keychainAccessGroup = "com.Korporate1k.LocalProxy.shared"
+    #if os(macOS)
+    // macOS shares Keychain items between the app and its extension only through
+    // the data-protection keychain, and there the group must be team-prefixed.
+    static let keychainAccessGroup = "DS8AMC8BSV.com.Korporate1k.LocalProxy.shared"
+    #else
+    static let keychainAccessGroup = "com.Korporate1k.LocalProxy.shared"
+    #endif
     private static let passwordKey = "client_password"
     private static let providerBundleIdentifier = "com.Korporate1k.LocalProxy.Tunnel"
 
@@ -43,6 +49,11 @@ final class ClientTunnelManager: ObservableObject {
             // Delivered on `queue: .main`, so this is already the main actor —
             // the observer closure is just typed as a plain Sendable closure.
             MainActor.assumeIsolated {
+                // Only our own connection. NE posts this for every VPN configuration alive in this process, and
+                // `loadOrCreate` briefly holds all of them (including the duplicates it removes), so without this
+                // check a foreign VPN's status would overwrite ours — and on macOS it could drive the app's
+                // reconnect logic into starting our tunnel.
+                guard connection === self.manager?.connection else { return }
                 DebugLog.important("client", "VPN status -> \(status.rawValue) (\(String(describing: status)))")
                 self.status = status
             }
@@ -70,9 +81,17 @@ final class ClientTunnelManager: ObservableObject {
                     completion(.failure(error))
                     return
                 }
-                let manager = managers?.first(where: {
+                let matching = managers?.filter {
                     ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == Self.providerBundleIdentifier
-                }) ?? NETunnelProviderManager()
+                } ?? []
+                #if os(macOS)
+                // Saving before the first load finished used to create a second
+                // configuration ("LocalProxy Client 2"...). Keep one, drop the rest.
+                for extra in matching.dropFirst() {
+                    extra.removeFromPreferences { _ in }
+                }
+                #endif
+                let manager = matching.first ?? NETunnelProviderManager()
                 self.manager = manager
                 self.status = manager.connection.status
                 completion(.success(()))
@@ -107,8 +126,28 @@ final class ClientTunnelManager: ObservableObject {
                     self.lastError = error.localizedDescription
                     completion(.failure(error))
                 } else {
+                    #if os(macOS)
+                    // A freshly saved configuration must be reloaded before
+                    // `startVPNTunnel()` accepts it — without this, macOS
+                    // reports NEVPNErrorDomain error 1 (configurationInvalid)
+                    // and `status` stays `.invalid`.
+                    manager.loadFromPreferences { [weak self] loadError in
+                        DispatchQueue.main.async {
+                            guard let self else { return }
+                            if let loadError {
+                                self.lastError = loadError.localizedDescription
+                                completion(.failure(loadError))
+                            } else {
+                                self.status = manager.connection.status
+                                self.lastError = nil
+                                completion(.success(()))
+                            }
+                        }
+                    }
+                    #else
                     self.lastError = nil
                     completion(.success(()))
+                    #endif
                 }
             }
         }
@@ -130,4 +169,33 @@ final class ClientTunnelManager: ObservableObject {
     func stop() {
         manager?.connection.stopVPNTunnel()
     }
+
+    #if os(macOS)
+    /// When the current tunnel session came up, straight from NetworkExtension.
+    var connectedDate: Date? { manager?.connection.connectedDate }
+
+    /// The error that ended the last session, or `nil` if it ended cleanly (user / `scutil --nc stop`). A tunnel
+    /// extension that dies on its own ("The VPN session failed because an internal error occurred") reports one.
+    func fetchLastDisconnectError(_ completion: @escaping (Error?) -> Void) {
+        guard let manager else {
+            completion(nil)
+            return
+        }
+        manager.connection.fetchLastDisconnectError(completionHandler: completion)
+    }
+
+    /// Asks the running packet-tunnel extension for its live counters
+    /// (`PacketTunnelProvider.handleAppMessage`). `nil` if it isn't running.
+    func requestStats(_ completion: @escaping (Data?) -> Void) {
+        guard let session = manager?.connection as? NETunnelProviderSession else {
+            completion(nil)
+            return
+        }
+        do {
+            try session.sendProviderMessage(Data("stats".utf8), responseHandler: completion)
+        } catch {
+            completion(nil)
+        }
+    }
+    #endif
 }

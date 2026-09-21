@@ -33,6 +33,9 @@ enum KeychainStore {
         if let accessGroup = accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
         SecItemDelete(query as CFDictionary)
 
         var attributes = query
@@ -52,6 +55,9 @@ enum KeychainStore {
         if let accessGroup = accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { return nil }

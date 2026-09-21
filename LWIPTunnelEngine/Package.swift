@@ -3,13 +3,16 @@ import PackageDescription
 
 let package = Package(
     name: "LWIPTunnelEngine",
-    platforms: [.iOS(.v15)],
+    platforms: [.iOS(.v15), .macOS(.v14)],
     products: [
         .library(name: "LWIPTunnelEngine", targets: ["LWIPTunnelEngine"])
     ],
     targets: [
         // tun2proxy (Rust, ipstack-based tun2socks) as a static-library
-        // xcframework, ios-arm64 + ios-arm64-simulator slices. Built from
+        // xcframework, ios-arm64 + ios-arm64-simulator + macos-arm64 slices (the
+        // macOS slice is added by scripts/build-tun2proxy-macos.sh, which also applies
+        // patch 0004 — ipstack no longer ends its loop on a failed device write; iOS
+        // slices do not have it yet). Built from
         // github.com/tun2proxy/tun2proxy @ fc77ca3 (0.8.3) plus three local patches
         // (kept in LWIPTunnelEngine/patches/, applied in order): 0001 stops UDP
         // ASSOCIATE relays failing with EISCONN on Darwin, 0002 adds ipstack upload
@@ -32,6 +35,13 @@ let package = Package(
                 .linkedFramework("SystemConfiguration"),
                 .linkedFramework("CoreFoundation")
             ]
+        ),
+        // Offline tests: they drive the packet framing over a plain socketpair and never start the engine or
+        // touch the network, so `swift test` needs no tunnel, device or proxy. macOS only (the xcframework's
+        // macos-arm64 slice is what links here).
+        .testTarget(
+            name: "LWIPTunnelEngineTests",
+            dependencies: ["LWIPTunnelEngine"]
         )
     ]
 )

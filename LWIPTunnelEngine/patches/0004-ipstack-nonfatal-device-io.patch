@@ -1,0 +1,185 @@
+diff -ru a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -317,15 +317,51 @@
+     let (up_pkt_sender, mut up_pkt_receiver) = mpsc::unbounded_channel::<NetworkPacket>();
+ 
+     tokio::spawn(async move {
++        // Local patch 0004. Any device I/O error used to end this task silently (`?` on the write, and the result
++        // was never looked at), which closed the accept channel; the embedding process then saw `AcceptError` and
++        // tore the whole VPN down. Transient errors (a full socket buffer, a reset datagram pair) now just drop
++        // that one packet, like a full NIC queue; only a device that is really gone ends the task, and the reason
++        // is logged either way.
++        let mut dropped_writes: u64 = 0;
++        let mut consecutive_write_failures: u32 = 0;
++        let mut read_errors: u64 = 0;
++        let mut consecutive_read_failures: u32 = 0;
++        // Sustained-failure window: a purely consecutive counter can be evaded forever by one success every few
++        // packets, which would leave the tunnel limping at a trickle with nothing ever reporting a fault.
++        let mut window_start: Option<std::time::Instant> = None;
++        let mut window_drops: u32 = 0;
+         loop {
+             select! {
+-                Ok(n) = device.read(&mut buffer) => {
+-                    if let Err(e) = process_device_read(&buffer[offset..n], &mut sessions, &session_remove_tx, &up_pkt_sender, &config, &accept_sender).await {
+-                        let io_err: std::io::Error = e.into();
+-                        if io_err.kind() == std::io::ErrorKind::ConnectionRefused {
+-                            log::trace!("Received junk data: {io_err}");
+-                        } else {
+-                            log::warn!("process_device_read error: {io_err}");
++                res = device.read(&mut buffer) => {
++                    match res {
++                        Ok(n) => {
++                            if let Err(e) = process_device_read(&buffer[offset..n], &mut sessions, &session_remove_tx, &up_pkt_sender, &config, &accept_sender).await {
++                                let io_err: std::io::Error = e.into();
++                                if io_err.kind() == std::io::ErrorKind::ConnectionRefused {
++                                    log::trace!("Received junk data: {io_err}");
++                                } else {
++                                    log::warn!("process_device_read error: {io_err}");
++                                }
++                            }
++                        }
++                        Err(e) => {
++                            if device_gone(&e) {
++                                log::error!("device read failed fatally, ip stack stopping: {e:?} kind={:?} os={:?}", e.kind(), e.raw_os_error());
++                                return Err(e.into());
++                            }
++                            read_errors += 1;
++                            consecutive_read_failures += 1;
++                            if read_errors == 1 || read_errors % 1000 == 0 {
++                                log::warn!("device read error (#{read_errors}), continuing: {e:?} kind={:?} os={:?}", e.kind(), e.raw_os_error());
++                            }
++                            // Mirror of the write-side cap. Without it an error this function judged "transient"
++                            // but that never clears parks the stack here forever: no packets move, the accept
++                            // channel stays open, the embedder never learns the tunnel is dead.
++                            if consecutive_read_failures >= MAX_CONSECUTIVE_READ_FAILURES {
++                                log::error!("{consecutive_read_failures} consecutive device reads failed, ip stack stopping: {e:?}");
++                                return Err(e.into());
++                            }
++                            tokio::time::sleep(Duration::from_millis(1)).await;
+                         }
+                     }
+                 }
+@@ -334,13 +370,110 @@
+                     log::debug!("session destroyed: {network_tuple}");
+                 }
+                 Some(packet) = up_pkt_receiver.recv() => {
+-                    process_upstream_recv(packet, &mut device, #[cfg(unix)]pi).await?;
++                    match write_upstream_with_retry(&packet, &mut device, #[cfg(unix)]pi).await {
++                        Ok(()) => {
++                            consecutive_write_failures = 0;
++                            consecutive_read_failures = 0;
++                        }
++                        Err(e) => {
++                            let io_err: std::io::Error = e.into();
++                            if device_gone(&io_err) {
++                                log::error!("device write failed fatally, ip stack stopping: {io_err:?} kind={:?} os={:?}", io_err.kind(), io_err.raw_os_error());
++                                return Err(io_err.into());
++                            }
++                            dropped_writes += 1;
++                            consecutive_write_failures += 1;
++                            if dropped_writes == 1 || dropped_writes % 1000 == 0 {
++                                log::warn!("device write failed after retries, packet dropped (#{dropped_writes}): {io_err:?} kind={:?} os={:?}", io_err.kind(), io_err.raw_os_error());
++                            }
++                            // Nothing is getting through any more, so the device is effectively gone even though the
++                            // errno says otherwise. Stop rather than drop packets forever.
++                            if consecutive_write_failures >= MAX_CONSECUTIVE_WRITE_FAILURES {
++                                log::error!("{consecutive_write_failures} consecutive device writes failed, ip stack stopping: {io_err:?}");
++                                return Err(io_err.into());
++                            }
++                            let now = std::time::Instant::now();
++                            match window_start {
++                                Some(start) if now.duration_since(start) <= WRITE_FAILURE_WINDOW => window_drops += 1,
++                                _ => {
++                                    window_start = Some(now);
++                                    window_drops = 1;
++                                }
++                            }
++                            if window_drops >= MAX_WRITE_FAILURES_PER_WINDOW {
++                                log::error!("{window_drops} device writes dropped within {WRITE_FAILURE_WINDOW:?}, ip stack stopping: {io_err:?}");
++                                return Err(io_err.into());
++                            }
++                        }
++                    }
+                 }
+             }
+         }
+     })
+ }
+ 
++/// Consecutive failed writes (each already retried) after which the device is treated as gone regardless of errno.
++/// At roughly 16 ms of retries per packet this is a few seconds of nothing getting through.
++const MAX_CONSECUTIVE_WRITE_FAILURES: u32 = 200;
++
++/// Same idea for the read side (see the read branch in `run`).
++const MAX_CONSECUTIVE_READ_FAILURES: u32 = 200;
++
++/// A slower backstop than the consecutive counters: this many drops inside one window means the device is not
++/// recovering, however many isolated successes are sprinkled between them.
++const WRITE_FAILURE_WINDOW: Duration = Duration::from_secs(10);
++const MAX_WRITE_FAILURES_PER_WINDOW: u32 = 500;
++
++/// Local patch 0004. Writes one packet, retrying while the failure looks transient.
++///
++/// Darwin fails a nonblocking `AF_UNIX SOCK_DGRAM` write with ENOBUFS (os error 55) — not EWOULDBLOCK, so tokio
++/// never treats it as "try again" — once the reader falls about a megabyte behind, and it clears the moment the
++/// reader takes a single datagram. Retrying briefly keeps the packet where dropping it would silently cost
++/// throughput, and the backoff doubles as backpressure on this loop.
++async fn write_upstream_with_retry<Device: AsyncWrite + Unpin + 'static>(
++    up_packet: &NetworkPacket,
++    device: &mut Device,
++    #[cfg(unix)] packet_information: bool,
++) -> Result<()> {
++    // Kept deliberately short. This runs inside the `select!` arm, so the whole budget is time during which the
++    // device-read arm is not polled — and ENOBUFS happens exactly when the reader is behind, so a long budget
++    // would stall the upload direction to "fix" a download stall. ~1.75 ms total is enough for the reader to take
++    // one datagram, which is all that is needed to clear ENOBUFS.
++    const MAX_ATTEMPTS: usize = 4;
++    let mut delay = Duration::from_micros(250);
++    let mut attempt = 0usize;
++    loop {
++        attempt += 1;
++        match process_upstream_recv(up_packet, device, #[cfg(unix)] packet_information).await {
++            Ok(()) => return Ok(()),
++            Err(e) => {
++                let io_err: std::io::Error = e.into();
++                if device_gone(&io_err) || attempt >= MAX_ATTEMPTS {
++                    return Err(io_err.into());
++                }
++                tokio::time::sleep(delay).await;
++                delay = (delay * 2).min(Duration::from_millis(1));
++            }
++        }
++    }
++}
++
++/// True when a device I/O error means the device itself is gone, rather than a transient condition that clears
++/// once the reader drains.
++///
++/// The classification matters more than it looks: anything judged transient here is retried forever, so getting
++/// it wrong turns a dead device into a tunnel that reports Connected and silently carries nothing.
++///
++/// Measured on Darwin for the `AF_UNIX SOCK_DGRAM` socketpair this actually runs over, after the peer closes:
++/// `recv` reports **ECONNRESET (54)** once and then every later blocking `recv` hangs forever (no EOF is ever
++/// delivered), and `send` reports **EDESTADDRREQ (39)**. Both are terminal here. ENOBUFS (55) and
++/// EWOULDBLOCK/EAGAIN are the genuinely transient ones — they clear as soon as the reader takes a datagram.
++fn device_gone(e: &std::io::Error) -> bool {
++    use std::io::ErrorKind::{BrokenPipe, ConnectionReset, NotConnected, UnexpectedEof};
++    matches!(e.kind(), BrokenPipe | ConnectionReset | NotConnected | UnexpectedEof)
++        || matches!(e.raw_os_error(), Some(9) | Some(39)) // EBADF, EDESTADDRREQ
++}
++
+ async fn process_device_read(
+     data: &[u8],
+     sessions: &mut SessionCollection,
+@@ -416,8 +549,9 @@
+     }
+ }
+ 
++/// Local patch 0004 takes this by reference so a failed write can be retried with the same packet.
+ async fn process_upstream_recv<Device: AsyncWrite + Unpin + 'static>(
+-    up_packet: NetworkPacket,
++    up_packet: &NetworkPacket,
+     device: &mut Device,
+     #[cfg(unix)] packet_information: bool,
+ ) -> Result<()> {
