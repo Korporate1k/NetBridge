@@ -2198,3 +2198,131 @@ The owner set the permanent scheme: the TestFlight build number is a simple inte
 New archive from main 623b407 (engine patches 0001+0002+0003, QA hooks absent, Apple Development signing; Distribute App re-signs with the Apple Distribution certificate): `~/Library/Developer/Xcode/Archives/2026-09-20/NetBridge 9-20-26, 3.53 AM build 3.xcarchive`, version 1.0 build 3 on both the app and the tunnel extension. NOT uploaded.
 The old timestamp-numbered archive was deleted at the owner's request. Both phones were reinstalled from the new archive's own .app and report 1.0 (3); the 17 Pro Max relay restarted and answered UDP ASSOCIATE on 8081 and 8080 (advertising 172.20.10.1) within 5 s.
 `scripts/build-ipa.sh` deliberately still stamps a timestamp (sideloading tools keep the old binary if the number does not change); that is for sideload IPAs, not TestFlight.
+
+## 2026-09-20 — macOS client (branch `feature/macos-client`)
+
+Native macOS app that behaves like the iOS **Client** tab (system-wide VPN through a remote SOCKS5 server) plus a live-traffic **Dashboard**. No relay server, Devices, Settings or StoreKit on the Mac.
+
+**What was added**
+- `scripts/build-tun2proxy-macos.sh` — rebuilds tun2proxy @ fc77ca3 with patches 0001-0003 and adds a `macos-arm64` slice to `LWIPTunnelEngine/tun2proxy.xcframework`. The iOS slices are byte-identical (checked by sha1); pinned deps in `LWIPTunnelEngine/patches/tun2proxy-Cargo.lock` (patch 0002 targets the vendored `ipstack` crate, which the script vendors).
+- `LWIPTunnelEngine/Package.swift` — declares `.macOS(.v14)`.
+- `project-mac.yml` -> `LocalProxyMac.xcodeproj` (XcodeGen; separate from the hand-edited iOS project, which is untouched). Targets: `LocalProxyMac` (app, "NetBridge") and `LocalProxyMacTunnel` (packet-tunnel app extension), same bundle IDs as iOS. Regenerate with `xcodegen generate --spec project-mac.yml`.
+- `LocalProxyMac/` — Mac-only SwiftUI app: `MacClientModel`, `MacClientView`, `MacDashboardView`, `QRSupport` (paste / QR image import / drag-drop, replaces the camera scanner), `MacSupport` (stand-in `DebugLog`/`ErrorDescription` + no-op UIKit modifiers so shared iOS files compile unchanged), `Shared/TunnelStats.swift` (extension -> app stats JSON).
+- Shared iOS files reused: `ClientConfiguration`, `KeychainStore`, `ClientTunnelManager`, `Socks5ClientTestView`, `LocalProxyTunnel/PacketTunnelProvider.swift`. Only `#if os(macOS)` additions: data-protection keychain + team-prefixed access group, counters + `handleAppMessage` in the provider, `connectedDate`/`requestStats` in `ClientTunnelManager`.
+
+**Verified**
+- `xcodebuild -scheme LocalProxyMac -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build` -> BUILD SUCCEEDED.
+- `scripts/build-ipa.sh` (iOS) -> BUILD SUCCEEDED, unsigned IPA rebuilt.
+
+**Not yet verified / blocker**
+- Signed build fails on provisioning: no *Mac App Development* profiles for `com.Korporate1k.LocalProxy` / `.Tunnel`, and this Mac ("Matthew's MacBook Air") is not registered in the developer account. Needs the Mac registered + Network Extension capability on the App IDs (Xcode > Signing & Capabilities > Register Device, or developer.apple.com).
+- Nothing after signing has run: tunnel start on macOS, route/egress-IP proof, UDP/IPv6, dashboard counters, keychain sharing app<->extension (fallback: `NETunnelProviderProtocol.passwordReference`).
+- Note: `RemoteConfig` (gist kill switch for the SOCKS5 tester) is not shared to the Mac — it depends on server-side types — so the tester is always shown on macOS.
+- Note: this Mac's own `utun4` client VPN into the phone must be disconnected before testing.
+
+## 2026-09-20 — macOS: VPN dropping under light usage — root cause found, fix built (branch `feature/macos-client`)
+
+**Symptom:** the Mac VPN disconnects after light use. **Data (macOS unified log, 14 h + the extension's `tunnel-debug.log`):** of 50 stop events, 34 were clean "Stop command received" (reason 1) sent by short-lived `scutil` processes — not the app or extension (something ran `scutil --nc stop`; not identified, nothing in cron/launchd/repo scripts). Only 2 were real failures, both "Plugin failed" ("The VPN session failed because an internal error occurred", 05:31:19 and 05:52:01), each preceded by a burst of new connections and both with this exact log signature: `ERROR tun2proxy::general_api - failed to run tun2proxy with error: IpStack(AcceptError)` followed ~2 s later by `INFO ... Forcing exit now.`
+
+**Root cause (source-verified + measured offline):**
+1. `ipstack` 1.0.1 `run()` (lib.rs) ends its whole task on the first failed `device.write_all()` (`process_upstream_recv(...).await?`); the result is never logged. The accept channel closes and `accept()` returns `AcceptError`.
+2. tun2proxy `general_run_for_api()` spawns a thread that calls `std::process::exit(-1)` 2 s after the engine returns for ANY reason, so the extension dies; NetworkExtension reports "Plugin failed" and nothing restarts it.
+3. Why the write fails: packets cross into the app over an `AF_UNIX SOCK_DGRAM` socketpair. Measured with a nonblocking writer and no reader: Darwin fails `send()` with **ENOBUFS (errno 55), not EAGAIN**, after ~689 full-size datagrams per MB of SO_SNDBUF/SO_RCVBUF (1 MB -> 1,011 KB; 4 MB -> 4,052 KB; capped at `kern.ipc.maxsockbuf` 8 MB) and recovers as soon as one datagram is read. tokio only retries on WouldBlock, so ENOBUFS is a hard error. A connection burst that outruns the app-side reader (one `writePackets` per packet + synchronous file logging on the engine's threads) therefore kills the VPN. NOT captured from the live failure itself (the original code never logged the error) — the errno is inferred from the probe, the mechanism from the source and the offline test below.
+
+**Offline evidence (no tunnel used):** `LWIPTunnelEngine/patches/0004-regression-test/run.sh` drives ipstack with a device whose write fails once with os error 55. Pre-patch `lib.rs`: `transient_enobufs_write_does_not_kill_the_stack` FAILS (stack dead, nothing delivered). Patched: 2 passed (the other test checks a genuinely gone device — BrokenPipe — still ends the stack).
+
+**Changes**
+- `LWIPTunnelEngine/patches/0004-ipstack-nonfatal-device-io.patch` (new; wired into `scripts/build-tun2proxy-macos.sh`): a failed device write/read no longer ends the stack — the packet is dropped and logged (first, then every 1000th); only BrokenPipe/NotConnected/UnexpectedEof/EBADF end it, with the reason logged. macOS slice only: the iOS slices are byte-identical (sha1-checked before/after), so iOS does NOT have this fix yet.
+- `TunnelEngine.swift`: batched delivery (`onPacketsToWrite`, up to 64 already-queued datagrams per `writePackets`; replaces `onPacketToWrite`); new `onEngineExit` when the engine stops without `stop()`; macOS socketpair buffers 4 MB (iOS stays 1 MB).
+- `PacketTunnelProvider.swift` (shared with iOS): `debugLog` resolves the app-group path once, keeps file handles open and rotates each log to `.prev` at 8 MB (it used to open/append/close 2 files per line and look up the container each time, unbounded); `onEngineExit` -> `cancelTunnelWithError` so NetworkExtension records a real error.
+- `ClientTunnelManager.swift` (macOS only): `fetchLastDisconnectError`. `MacClientModel.swift`: if a session that was up ends WITH a disconnect error and the user did not press Disconnect, reconnect after 2 s / 5 s / 15 s (max 3 tries, counter resets after 60 s stable). Clean stops (Disconnect button, `scutil --nc stop`) carry no error and are not reconnected.
+
+**Verified:** engine builds with 0004; patched strings present in the new extension (`LocalProxyTunnel.debug.dylib`), absent in the pre-change baseline copy at `build/mac-old-baseline/`; signed Mac build and unsigned Mac build succeed; unsigned IPA rebuilt (`1.0 (20260920.074054)`); offline test and socketpair probe as above.
+
+**NOT verified — read before relying on this**
+- The fix has not been shown to remove the field failure: the old build was never reproduced failing on demand, and a live 5-minute burst on the patched build was inconclusive (waves 2-5: all 64 fetches returned curl code 000 = timeout, 242 engine "Operation timed out" errors, while the tunnel itself stayed up and example.com answered in 0.19 s right afterwards; cause not determined — the burst may simply have overloaded the phone relay). The owner then asked to stop connecting the tunnel, so no further live tests were run.
+- Auto-reconnect has not been exercised (no `kill -9` of the extension was done).
+- The 07:15:06 "Plugin failed" in the log was self-inflicted: a rebuild replaced the running extension's binary. Two app-issued stops during the burst (07:26:51, 07:30:13, `NetBridge[38053]`, followed 3 s later by a connect) match a Disconnect/Connect button press; the only stop path in the app is `connectOrDisconnect()` (two buttons, plus the Cmd-Return shortcut on the Client tab's button). Not proven to be the user.
+- The 34 `scutil` stops remain unexplained.
+- The tunnel was left connected on the new build (started 07:17:51).
+- Open decision: apply 0004 to the iOS slices (same code path; would need an iOS slice rebuild and phone testing).
+
+## 2026-09-20 (later) — review round: two self-inflicted bugs from the section above, found and fixed offline; no VPN was connected
+
+Owner constraint for this round: find and fix issues **without connecting the tunnel**. Everything below is source analysis, syscall probes and offline tests. Owner decisions taken this round: keep patch 0004 **macOS-only**; app-level reconnect only (**no** `NEOnDemand`); implement network-change detection with auto-recovery.
+
+**Corrections to the earlier 2026-09-20 section (it over-claimed):**
+- "34 `scutil` stops" is wrong. Exactly **one** stop was confirmed to be `scutil`; the other 33 are logged by `nesessionmanager` as `<unknown-name>`. All of them stopped at 06:44, before this session was doing anything — a prior harness, not a live fault. Still unattributed, but not an active problem.
+- The three later app-issued stops (07:26/07:30/07:34) were **real UI clicks**: `AppKit sendAction:` appears immediately before each one in the log. Not the reconnect logic, which has still never fired.
+- Sleep/wake is ruled out for the failure window: `DisconnectOnSleep: 0` on the saved configuration and every `pmset` sleep was 2026-09-19.
+- ENOBUFS needs ~689 queued datagrams per MB of buffer, and both "Plugin failed" events happened during heavy load bursts. **Patch 0004 is a real fix for a real bug, but probably not the owner's "light usage" complaint.**
+
+**BUG I INTRODUCED, now fixed — the path monitor cancelled healthy tunnels.** `checkServerAddress()` re-resolved the server with `getaddrinfo` *while the tunnel was up*. Confirmed in the vendored engine (`build/tun2proxy-macos/src/src/lib.rs:333`): with `--dns virtual`, **any** UDP to port 53 is answered from the fake `198.18.0.0/15` pool regardless of destination IP. `NWPathMonitor` also fires once immediately on `start()`. So for a hostname-configured server the sequence was: connect → 2 s later resolve → fake `198.18.x.x` → "server moved" → `cancelTunnelWithError` → 3 reconnects → VPN down for good. It would also poison the system resolver cache for the server's name, which could then get pinned into `excludedRoutes` on the next start. Literal-IP servers were unaffected (the `inet_pton` fast path), which is why it was not obvious.
+Rewritten to never resolve while the tunnel is up: it probes the address **already pinned** into `excludedRoutes` (which by construction routes over the physical interface, no DNS involved), and cancels only if the server had been reachable earlier this session, is unreachable twice running, and has not already been cancelled once this session. Re-resolution happens only in `startTunnel`, with the tunnel down and DNS trustworthy. That covers both a hostname whose address moved and a literal IP belonging to a network we left.
+
+**BUG I INTRODUCED, now fixed — 0004's error classification parked the stack forever.** `device_gone()` listed `BrokenPipe`/`NotConnected`/`UnexpectedEof`/EBADF, none of which this transport produces. Measured on Darwin (probe + a new unit test): after the peer closes an `AF_UNIX SOCK_DGRAM` pair, `recv` reports **ECONNRESET (54)** once and every later *blocking* `recv` hangs forever (no EOF ever), and `send` reports **EDESTADDRREQ (39)**. Treating those as transient meant a dead device produced a tunnel that reported Connected and silently carried nothing — worse than the loud failure 0004 replaced. Both errnos are now fatal, and the read branch got a consecutive-failure cap mirroring the write side.
+
+**Also fixed this round**
+- `onEngineExit` → `cancelTunnelWithError` is now `#if os(macOS)`. On iOS nothing reconnects (no on-demand, no `MacClientModel` equivalent), and letting the process die leaves NE free to relaunch the provider; ending the session explicitly would have turned a recoverable crash into a tunnel that stays down in a pocket.
+- `startTunnel` now **fails** when the host cannot be resolved instead of starting with no excluded route (which loops and reports Connected while carrying nothing). Applies to iOS too — a strict improvement.
+- Reconnect no longer trusts `fetchLastDisconnectError` freshness. The SDK header (`NEVPNConnection.h`) documents only "the most recent error" — nothing about being cleared or scoped to the session that just ended. The provider now stamps a per-session `sessionID` into its cancel errors, and the app reconnects only for `domain == "LocalProxyTunnel"` with an ID it has not handled (persisted in `UserDefaults`). **Deliberately more conservative: a hard-killed extension never stamps an error, so that case will not auto-reconnect** — same as before auto-reconnect existed, and it cannot loop against an unknown cause.
+- `ClientTunnelManager`'s `.NEVPNStatusDidChange` observer now checks `connection === manager?.connection`. NE posts for every configuration alive in the process and `loadOrCreate` briefly holds them all, so a foreign VPN's status could overwrite ours and drive the reconnect logic.
+- `suppressReconnect` spans `connect()`'s save/start window: `saveToPreferences` tears down a running session, which `sessionEnded()` could not distinguish from a crash.
+- `reconnectAttempts` resets only after a session lasting ≥60 s **that carried downlink bytes**. Resetting on `.connected` alone let any fault spaced >62 s apart retry forever, since the tunnel reports connected even when the proxy is unreachable.
+- Retry budget in 0004 cut from 8 attempts/~16 ms to 4/~1.75 ms — it runs inside the `select!` arm, so the budget is time the device-read arm is not polled, and ENOBUFS means the reader is already behind. Added a sustained-failure window (500 drops / 10 s) because a consecutive counter can be evaded forever by one success every few packets.
+- `TunnelEngine.active` (read from tokio threads via the C log callback, never uninstalled) is now lock-guarded with an atomic compare-and-clear. A first-recv `EAGAIN` in `readBatch` no longer counts as end-of-tunnel. `debugLog` rotation truncates in place if the move fails, so the size bound holds.
+- Engine verbosity default is `warn`, not `info` (every line crossed into Swift on a tokio thread and did synchronous file I/O under a lock). Raise it per-session with a `verbosity` key in `providerConfiguration`; invalid values fall back rather than letting clap `exit()` the extension.
+
+**New offline test coverage**
+- `LWIPTunnelEngine/Tests/` (new test target; `swift test` works because the xcframework now has a macos-arm64 slice): 8 tests, all over a real socketpair, no tunnel/network. They cover batching order and families, the `maxBatch` ceiling, header-only datagrams not desynchronising `packets`/`families`, `shutdown` ending the read loop, the ENOBUFS-not-EAGAIN platform behaviour, the ECONNRESET/EDESTADDRREQ behaviour above, and verbosity clamping.
+- **A hung test found a real fact:** the first version asserted that `close()`ing the peer wakes a blocked reader. It does not — the suite hung for 7 minutes and `sample` showed it blocked in `recv`. `shutdown()` is what unblocks it, which is exactly why `TunnelEngine.stop()` calls `shutdown` before `close`. Both facts are now pinned by tests.
+- `patches/0004-regression-test/` grew to 4 tests. Note the two fatal-errno tests pass on the *unpatched* crate too — they are guardrails against 0004 over-classifying errors as transient, not detectors of the original bug. The two ENOBUFS tests are the ones that fail unpatched.
+
+**Verified (offline, this round)**
+`swift test` 8/8 passed in 6 ms. Rust regression tests: 4/4 on the patched crate, 2 passed / 2 FAILED on the pristine crate (so the tests have teeth). macOS engine slice rebuilt with 0001-0004; **both iOS slices byte-identical by sha1** (`cf3b7df…`, `b68b298…` before and after) while macos-arm64 changed `32ae0ca… -> 4ff88c0…`. Signed Mac build SUCCEEDED; all four new code paths present in `LocalProxyTunnel.debug.dylib`. Unsigned IPA rebuilt: `1.0 (20260920.084528)`.
+
+**Still NOT verified — nothing here has run against a live tunnel**
+- Neither 0004 nor the path-monitor fix has been shown to stop a real-world drop. The old build was never reproduced failing on demand.
+- Auto-reconnect has still never fired, and the session-nonce path is untested end to end.
+- Unsettled without a live session: whether `cancelTunnelWithError` reliably beats tun2proxy's forced `exit(-1)` ~2 s later (if it loses, NE records its own error, our nonce is absent, and we deliberately do not reconnect); whether `fetchLastDisconnectError` is ordered against the `.disconnected` notification; what error NE records when `saveToPreferences` tears down a live session.
+- Known remaining gap, not fixed: **"connected but the proxy is unreachable" is detected and logged but not surfaced in the UI.** The data is already computed in `checkServerAddress` and the dashboard already polls `handleAppMessage` every second — it needs a flag in `TunnelStats` and a badge. This is the most likely shape of the owner's original complaint and it is still invisible in the app.
+- Known and unfixed: the socketpair fd is closed while other threads may still hold its number (`consumeInboundPacket`/`readLoop` read it under the lock, then use it after releasing) — a use-after-close window that needs an fd generation counter or a `dup2` sentinel, not just a lock.
+- `resolveIPv4` still takes only the first A record; a multi-A hostname could pin one address and probe another.
+- macOS targets have **no** `application-groups` entitlement, so `containerURL(forSecurityApplicationGroupIdentifier:)` returns nil there: on macOS the extension's `tunnel-debug.log` exists only in its own sandbox `tmp`, not in a group container the app can read.
+
+## 2026-09-20 (later still) — "connected but the proxy isn't answering" is now visible in the app
+
+Closes the gap flagged at the end of the previous section. Still no VPN connected; all verification offline.
+
+**Why this is the interesting failure.** `NEVPNStatus.connected` only means the tunnel's network settings were installed — nothing in the stack ever contacts the proxy — and the engine does not exit when the proxy stops answering (per-session failures are logged inside spawned tokio tasks, and `exit_on_fatal_error` is false). So a relay that has gone away is **indistinguishable from a healthy one**: green badge, uptime ticking, throughput chart flat, traffic going nowhere. That is the most likely shape of the owner's original "disconnects after light usage" report, and until now the app had no signal for it at all.
+
+**What was added**
+- `TunnelStats` gains `serverReachable: Bool?` (nil = no probe yet) and `lastProbe: Double` (epoch, 0 = never). Decoding is now key-by-key with `decodeIfPresent`: a rebuilt app can poll an extension still running older code, and one missing key in the synthesised decoder would throw and blank the whole dashboard. Note this file declares an explicit memberwise init, since adding `init(from:)` suppresses the synthesised one.
+- `PacketTunnelProvider` probes the server on a 20 s timer as well as on path changes, and reports the verdict through `TunnelCounters` → `handleAppMessage`. A path change is not the only way to lose the proxy and not even the common one — the relay app on the phone being suspended causes no network change on this Mac whatsoever, which is precisely why path-triggered checks alone would never have noticed.
+- Probes moved to their own serial `probeQueue`. They block for up to 3 s, and `pathQueue` is where `NWPathMonitor` delivers updates — blocking it would queue path changes behind a probe.
+- **Timer probes only report; they never cancel the tunnel** (`probeServer(mayCancelTunnel:)`). Only a path-change probe may cancel, and only under the existing guards (was reachable earlier, two failures running, once per session). Acting on a timer probe would mean tearing down sessions whenever the relay is merely switched off, which churns without fixing anything.
+- UI: `MacClientModel.proxyHealth` (`notConnected` / `checking` / `healthy` / `unreachable`). The Dashboard shows an orange banner naming the server and when it was last checked, plus a "Proxy" stat tile (Answering / Not answering / Checking…) and a "Server" tile. The Client tab shows a one-line warning under the connect button, so the case is visible on whichever screen is open.
+
+**Verified (offline)**
+- `TunnelStats` JSON contract checked by compiling the real file with a scratch harness (`swiftc TunnelStats.swift main.swift`): 8/8 — old payloads without the new keys still decode (reachability unknown, not false), `false` survives as `false` rather than collapsing to unknown, round-trip is stable, garbage is still rejected, `.zero` means unknown.
+- Full chain re-run: macOS slice rebuilt (`4ff88c0… -> 5b10e42…`), **both iOS slices still byte-identical**; Rust regression 4/4 patched and 2 FAILED on the pristine crate; signed Mac build SUCCEEDED; unsigned IPA `1.0 (20260920.085840)`.
+- Strings confirmed in the built products: `UNREACHABLE`/`serverReachable`/`lastProbe` in `LocalProxyTunnel.debug.dylib`; the banner, tile and Client-tab warning strings in `NetBridge.debug.dylib`. (Debug builds put the code in a `*.debug.dylib`, not the thin main executable — grepping the executable alone shows nothing and is misleading.)
+
+**Still not verified / known limits**
+- No live tunnel, so the probe has never actually run against a real relay: the banner has not been seen on screen, and the 20 s cadence and 3 s connect timeout are unmeasured in practice.
+- The probe is a TCP connect to the SOCKS5 port. It proves the port accepts connections, **not** that SOCKS5 works or that the credentials are right — a relay that accepts and then fails every handshake still reads as "Answering".
+- Reachability is only as fresh as the last probe, so the banner can lag a real outage by up to ~20 s; `lastProbe` is surfaced so the UI can say how stale the verdict is.
+- IPv6-only servers are not probed (`canReachServer` is AF_INET only), matching `resolveIPv4`/`excludedRoutes`, which are also IPv4-only.
+- iOS gets none of this: it is all under `#if os(macOS)`.
+
+## 2026-09-21 — TestFlight archive build 4 (outbound interface / VPN work)
+
+Archive: `~/Library/Developer/Xcode/Archives/2026-09-21/NetBridge 9-21-26, 6.46 AM build 4.xcarchive` — NetBridge 1.0 build **4** on both the app and the tunnel extension (Release, automatic signing, team DS8AMC8BSV, Apple Development identity; Organizer → Distribute App re-signs with the Apple Distribution certificate). `CURRENT_PROJECT_VERSION` 3 → 4 in all four settings, committed alone as 3150342 on branch `feature/macos-client`; no command-line override. NOT uploaded. Next TestFlight build = 5.
+Contents beyond build 3: Settings → Outbound Network picker (Automatic / Wi-Fi / Cellular / Wired) with cellular NAT64 synthesis (64:ff9b::/96, only when the cellular interface is IPv6-only) and TCP keep-alives; a separate **Bind to VPN** switch (TCP + UDP through the VPN tunnel, hostnames resolved inside the tunnel, custom DoH skipped while bound, fail-closed when no tunnel); open connections close when the outbound setting changes or a VPN starts/changes, but a tunnel that reconnects within 10 s keeps them (new dials wait up to 6 s; UDP egress sockets re-bind). DNS "no such name" now fails immediately with a clear reason.
+Verified: release binary has no QA hooks; both bundles report build 4. The archive was built from the working tree, which still has UNCOMMITTED changes (the code above plus earlier macOS-client / engine work); only the version bump is committed.
+Tested on the iPhone 17 Pro Max with WARP: TCP and UDP egress through the tunnel confirmed (Cloudflare trace warp=on, UDP egress in the WARP range); the proxy rode out ~12 tunnel drops with no closes. The drops themselves came from the phone's Wi-Fi joining/leaving a network (turning Wi-Fi off fixed it), not the app.
+
+## 2026-09-21 — build 4 re-archived from a committed tree (supersedes the archive path in the previous section)
+
+At the owner's request the first build 4 archive was deleted, all working-tree changes were committed on `feature/macos-client`, and build 4 was archived again from that clean tree (build number unchanged at 4, no override; the version bump itself is 3150342). New archive: `~/Library/Developer/Xcode/Archives/2026-09-21/NetBridge 9-21-26, 6.50 AM build 4.xcarchive`. NOT uploaded. Next TestFlight build = 5.
+Commits: (1) outbound interface picker, cellular NAT64, Bind to VPN; (2) macOS client, tunnel engine and packet-tunnel work from earlier sessions, committed as found (includes the 34 MB macOS libtun2proxy.a, like the tracked iOS ones) — not re-verified in this session; (3) this HANDOFF update.
