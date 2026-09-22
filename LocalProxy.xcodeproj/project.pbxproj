@@ -13,6 +13,9 @@
 		051885aa70f5e3fe1a2be33f /* UsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98c0d600fbb5630bdb79fcd1 /* UsageHistory.swift */; };
 		0567b5c29dbf38c4b16ebfba /* NetworkDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */; };
 		064cc426265a9a05362f9eed /* LocalAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */; };
+		bb0630e0dc7716289f4af032 /* AntiDPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91e0d80efaa4b6a33212a59e /* AntiDPI.swift */; };
+		22cf2ad52c8c469835476b73 /* TLSClientHelloFragmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = f412d80fce934ca94393f0cc /* TLSClientHelloFragmenter.swift */; };
+		1d7224942fde58860c918c42 /* ContinuousFragmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1207f7df7aeca474fca3627c /* ContinuousFragmenter.swift */; };
 		0858b1d6d35c56fbe2cfb1fa /* LocalProxyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5202167d0f78c85c48299801 /* LocalProxyApp.swift */; };
 		09b3cc8d86b757950011fa4e /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 78abd84349cbb2a960979df6 /* Assets.xcassets */; };
 		0b79554d5e266169198fd546 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26f8e3e814f4f02408d11de1 /* PacketTunnelProvider.swift */; };
@@ -140,6 +143,9 @@
 		e6c38930840264262e54f221 /* LocalProxy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalProxy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyProfile.swift; sourceTree = "<group>"; };
 		ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAddress.swift; sourceTree = "<group>"; };
+		91e0d80efaa4b6a33212a59e /* AntiDPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntiDPI.swift; sourceTree = "<group>"; };
+		f412d80fce934ca94393f0cc /* TLSClientHelloFragmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TLSClientHelloFragmenter.swift; sourceTree = "<group>"; };
+		1207f7df7aeca474fca3627c /* ContinuousFragmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuousFragmenter.swift; sourceTree = "<group>"; };
 		ef094df573c270e7eafe0ea3 /* RateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateLimiter.swift; sourceTree = "<group>"; };
 		f3e863de76a46020e8c6106c /* ProxyStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyStats.swift; sourceTree = "<group>"; };
 		fa107942bc399fcfe1a74e86 /* UpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpgradeView.swift; sourceTree = "<group>"; };
@@ -187,9 +193,20 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		62625e10c4bbc0123df6d775 /* AntiDPI */ = {
+			isa = PBXGroup;
+			children = (
+				91e0d80efaa4b6a33212a59e /* AntiDPI.swift */,
+				f412d80fce934ca94393f0cc /* TLSClientHelloFragmenter.swift */,
+				1207f7df7aeca474fca3627c /* ContinuousFragmenter.swift */,
+			);
+			path = AntiDPI;
+			sourceTree = "<group>";
+		};
 		8b290e3d2cab120742f9d3d3 /* LocalProxy */ = {
 			isa = PBXGroup;
 			children = (
+				62625e10c4bbc0123df6d775 /* AntiDPI */,
 				5202167d0f78c85c48299801 /* LocalProxyApp.swift */,
 				f3e863de76a46020e8c6106c /* ProxyStats.swift */,
 				b479143169eda996b7fccb52 /* ProxyServer.swift */,
@@ -396,6 +413,9 @@
 				7c384136edda4b597f2e3c6a /* ConnectProxyHandler+Relay.swift in Sources */,
 				f56010ec611bdf305d1741c5 /* ConnectProxyHandler+Socks5.swift in Sources */,
 				064cc426265a9a05362f9eed /* LocalAddress.swift in Sources */,
+				bb0630e0dc7716289f4af032 /* AntiDPI.swift in Sources */,
+				22cf2ad52c8c469835476b73 /* TLSClientHelloFragmenter.swift in Sources */,
+				1d7224942fde58860c918c42 /* ContinuousFragmenter.swift in Sources */,
 				48ca5c4361c3801402829212 /* ListenerConfig.swift in Sources */,
 				0ff1845e74c35320445d4156 /* RateLimiter.swift in Sources */,
 				be44418b3c258b74904c499f /* DoHResolver.swift in Sources */,

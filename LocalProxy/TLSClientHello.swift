@@ -10,8 +10,26 @@ import Foundation
 /// RFC 8446 §4.1.2's byte layout without a device or test target.
 enum TLSClientHello {
     static func extractSNI(from data: Data) -> String? {
-        let b = [UInt8](data)
-        var r = Reader(bytes: b)
+        let bytes = [UInt8](data)
+        guard let extBody = serverNameExtensionBody(in: bytes) else { return nil }
+        guard let nameRange = hostNameRange(inExtensionBody: bytes, bodyRange: extBody) else { return nil }
+        return String(bytes: bytes[nameRange], encoding: .utf8)
+    }
+
+    /// Byte range (0-based, within `data`) of the raw SNI hostname bytes in a
+    /// ClientHello, or `nil` if none is present / the buffer isn't a
+    /// well-formed ClientHello. Used by `AntiDPI`'s fragmenter to split
+    /// specifically around the hostname without decoding it.
+    static func sniRange(in data: Data) -> Range<Int>? {
+        let bytes = [UInt8](data)
+        guard let extBody = serverNameExtensionBody(in: bytes) else { return nil }
+        return hostNameRange(inExtensionBody: bytes, bodyRange: extBody)
+    }
+
+    /// Byte range of the `server_name` extension's body within `bytes`
+    /// (record header through the extensions list), or `nil`.
+    private static func serverNameExtensionBody(in bytes: [UInt8]) -> Range<Int>? {
+        var r = Reader(bytes: bytes)
 
         // TLS record header: ContentType(1)=0x16 handshake | ProtocolVersion(2) | length(2)
         guard r.byte() == 0x16 else { return nil }
@@ -50,7 +68,7 @@ enum TLSClientHello {
             guard let length = r.uint16() else { return nil }
             guard r.remaining >= Int(length) else { return nil }
             if type == 0x0000 {
-                return parseServerNameExtension(Array(r.bytes[r.offset..<(r.offset + Int(length))]))
+                return r.offset..<(r.offset + Int(length))
             }
             guard r.skip(Int(length)) else { return nil }
         }
@@ -58,19 +76,20 @@ enum TLSClientHello {
     }
 
     /// `server_name` extension body: server_name_list_length(2) | entries of
-    /// { name_type(1)=0x00 host_name | name_length(2) | name }.
-    private static func parseServerNameExtension(_ body: [UInt8]) -> String? {
-        var r = Reader(bytes: body)
+    /// { name_type(1)=0x00 host_name | name_length(2) | name }. Returns the
+    /// host_name bytes' absolute range within the original buffer.
+    private static func hostNameRange(inExtensionBody bytes: [UInt8], bodyRange: Range<Int>) -> Range<Int>? {
+        var r = Reader(bytes: Array(bytes[bodyRange]))
         guard let listLength = r.uint16() else { return nil }
         guard r.remaining >= Int(listLength) else { return nil }
         while r.remaining >= 3 {
             guard let nameType = r.byte() else { return nil }
             guard let nameLength = r.uint16() else { return nil }
             guard r.remaining >= Int(nameLength) else { return nil }
-            let name = Array(r.bytes[r.offset..<(r.offset + Int(nameLength))])
+            let start = bodyRange.lowerBound + r.offset
             guard r.skip(Int(nameLength)) else { return nil }
             if nameType == 0x00 {
-                return String(bytes: name, encoding: .utf8)
+                return start..<(start + Int(nameLength))
             }
         }
         return nil

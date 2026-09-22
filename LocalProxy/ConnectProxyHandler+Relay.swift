@@ -234,13 +234,33 @@ extension Tunnel {
     private func pipe(server: NWConnection, earlyData: Data) {
         if !earlyData.isEmpty {
             DebugLog.debug("data", tunnel: id, "sending early data bytes=\(earlyData.count) to server")
-            server.send(content: earlyData, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed { [weak self] error in
+            let onSendError: (NWError?) -> Void = { [weak self] error in
                 guard let self = self, let error = error else { return }
                 DebugLog.important("data", tunnel: self.id, "early data send error \(ErrorDescription.describe(error))")
-            })
+            }
+            if AntiDPI.isEnabled {
+                AntiDPI.send(earlyData, over: server, queue: queue, isHandshake: true, completion: onSendError)
+            } else {
+                server.send(content: earlyData, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed(onSendError))
+            }
         }
         forward(from: client, to: server, isUpstream: true)
         forward(from: server, to: client, isUpstream: false)
+    }
+
+    /// Outstanding-bytes cap per direction for pipelined reads (below) —
+    /// roughly the bandwidth-delay product of a decent connection at typical
+    /// internet RTTs. Bounds worst-case buffering the same way the old
+    /// one-chunk-at-a-time design did, just with a throughput-shaped window
+    /// instead of a throughput-crippling one.
+    private static let maxInFlightBytesPerDirection = 512 * 1024
+
+    private func inFlightBytes(isUpstream: Bool) -> Int {
+        isUpstream ? inFlightBytesUp : inFlightBytesDown
+    }
+
+    private func addInFlightBytes(_ delta: Int, isUpstream: Bool) {
+        if isUpstream { inFlightBytesUp += delta } else { inFlightBytesDown += delta }
     }
 
     private func forward(from source: NWConnection, to destination: NWConnection, isUpstream: Bool) {
@@ -285,15 +305,32 @@ extension Tunnel {
                 DebugLog.important("data", tunnel: self.id, "\(direction) data arrived WITH error \(ErrorDescription.describe(error))")
             }
 
-            // Backpressure: re-arm the read only after this chunk is handed off,
-            // so a slow destination can't cause unbounded buffering.
+            // Pipelined backpressure: several chunks may be in flight per
+            // direction at once (bounded by inFlightBytes), instead of
+            // strict one-chunk-at-a-time waiting — turns stop-and-wait into
+            // a sliding window so a single connection isn't capped at
+            // chunk_size/RTT. Anti-DPI's continuous fragmentation jitters
+            // *between fragments of one chunk* via asyncAfter, so pipelining
+            // a second chunk's fragmented send concurrently could interleave
+            // them out of order on the wire — only pipeline when that can't
+            // happen. Never pipeline the chunk carrying the FIN (isComplete)
+            // — nothing more to read from an already-finished source.
+            let canPipeline = !(isUpstream && AntiDPI.isEnabled)
+            let pipelinedRead = canPipeline && !isComplete
+                && self.inFlightBytes(isUpstream: isUpstream) < Self.maxInFlightBytesPerDirection
             self.sendsInFlight += 1
+            self.addInFlightBytes(count, isUpstream: isUpstream)
+            if pipelinedRead {
+                self.forward(from: source, to: destination, isUpstream: isUpstream)
+            }
+
             let sendStart = DispatchTime.now()
             let doSend = { [weak self] in
                 guard let self else { return }
-                destination.send(content: data, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed { [weak self] sendError in
+                let onSendComplete: (NWError?) -> Void = { [weak self] sendError in
                     guard let self = self else { return }
                     self.sendsInFlight -= 1
+                    self.addInFlightBytes(-count, isUpstream: isUpstream)
                     if !isUpstream && sendError == nil && self.firstByteToClientAt == nil {
                         self.firstByteToClientAt = DispatchTime.now()
                         DebugLog.debug("data", tunnel: self.id, "first byte forwarded to client after \(Self.ms(since: self.acceptedAt))")
@@ -305,15 +342,18 @@ extension Tunnel {
                     } else if isComplete {
                         DebugLog.important("data", tunnel: self.id, "\(direction) FIN received with final data \(self.progressText())")
                         self.forwardFin(to: destination, isUpstream: isUpstream)
-                    } else {
+                    } else if !pipelinedRead {
                         self.forward(from: source, to: destination, isUpstream: isUpstream)
                     }
-                })
+                }
+                if isUpstream && AntiDPI.isEnabled {
+                    AntiDPI.send(data, over: destination, queue: self.queue, isHandshake: false, completion: onSendComplete)
+                } else {
+                    destination.send(content: data, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed(onSendComplete))
+                }
             }
             // A device-level bandwidth cap: delay the send instead of sending
-            // immediately, so the long-run rate stays at the cap. The next
-            // read stays gated on this send completing either way, matching
-            // the existing backpressure design above.
+            // immediately, so the long-run rate stays at the cap.
             if let delay = self.rateLimiter?.consume(count), delay > 0 {
                 self.queue.asyncAfter(deadline: .now() + delay, execute: doSend)
             } else {

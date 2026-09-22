@@ -147,7 +147,7 @@ struct HomeTabView: View {
                 if server.availableAddresses.count > 1 {
                     Menu {
                         ForEach(server.availableAddresses) { entry in
-                            Button("\(entry.name): \(entry.ip)") { server.selectAddress(entry.ip) }
+                            Button("\(entry.displayName): \(entry.ip)") { server.selectAddress(entry.ip) }
                         }
                     } label: {
                         HStack(spacing: 4) {
@@ -216,7 +216,7 @@ struct HomeTabView: View {
     }
 
     private var selectedInterfaceName: String {
-        server.availableAddresses.first(where: { $0.ip == server.localIP })?.name ?? "Network"
+        server.availableAddresses.first(where: { $0.ip == server.localIP })?.displayName ?? "Network"
     }
 
     // MARK: Stats

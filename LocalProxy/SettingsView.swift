@@ -23,6 +23,8 @@ struct SettingsView: View {
     @AppStorage("doh.enabled") private var dohEnabled = false
     @AppStorage(EgressInterface.defaultsKey) private var egressInterface = EgressInterface.automatic.rawValue
     @AppStorage(EgressInterface.bindVPNKey) private var bindVPN = false
+    @AppStorage(AntiDPI.enabledKey) private var antiDPIEnabled = false
+    @AppStorage(AntiDPITuning.defaultsKey) private var antiDPITuning = AntiDPITuning.light.rawValue
     @State private var vpnInterfaceName: String? = VPNProbe.activeName()
     @AppStorage("doh.upstreamURL") private var dohUpstreamURL = "https://cloudflare-dns.com/dns-query"
     #if DEBUG
@@ -51,6 +53,7 @@ struct SettingsView: View {
                 dohSection
                 egressSection
                 vpnSection
+                antiDpiSection
                 if remoteConfig.showUploadTest {
                     toolsSection
                 }
@@ -242,6 +245,20 @@ struct SettingsView: View {
             Text("VPN")
         } footer: {
             Text("Sends the proxy's outbound traffic through the phone's active VPN tunnel instead of Wi-Fi or cellular, and overrides the choice above. Turn your VPN on first; if none is up, connections are refused rather than leaving unprotected. TCP and UDP both go through the tunnel. Open connections are closed when this changes or the VPN connects or drops, so nothing keeps running outside it. While this is on, custom DNS (DoH) is skipped and hostnames — TCP and UDP — are resolved inside the tunnel instead, so nothing is looked up outside it.")
+        }
+    }
+
+    private var antiDpiSection: some View {
+        Section {
+            Toggle("Anti-DPI", isOn: $antiDPIEnabled)
+            Picker("Tuning", selection: $antiDPITuning) {
+                ForEach(AntiDPITuning.allCases) { option in Text(option.label).tag(option.rawValue) }
+            }
+            .disabled(!antiDPIEnabled)
+        } header: {
+            Text("Evasion")
+        } footer: {
+            Text("Splits and paces outbound traffic to resist deep packet inspection and pattern-based throttling. Light keeps most of your speed; Aggressive disrupts patterns harder at a real throughput cost. Neither can hide total data used.")
         }
     }
 

@@ -5,6 +5,16 @@ struct InterfaceAddress: Identifiable, Equatable {
     let name: String
     let ip: String
     var id: String { "\(name)-\(ip)" }
+
+    /// Plain-English label for the OS's raw interface name, for display in the UI.
+    /// Falls back to the raw name for anything unrecognized (e.g. `utun3`, `llw0`).
+    var displayName: String {
+        if name.hasPrefix("en") { return "Wi-Fi" }
+        if name.hasPrefix("pdp_ip") { return "Cellular" }
+        if name.hasPrefix("bridge") { return "Personal Hotspot" }
+        if name.hasPrefix("awdl") { return "AirDrop" }
+        return name
+    }
 }
 
 enum LocalAddress {

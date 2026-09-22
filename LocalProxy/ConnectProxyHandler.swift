@@ -106,6 +106,12 @@ final class Tunnel {
     var firstByteToClientAt: DispatchTime?
     var lastDataAt = DispatchTime.now()
     var sendsInFlight = 0
+    /// Bytes handed to `destination.send()` but not yet completion-acknowledged,
+    /// tracked per direction so `forward(from:to:isUpstream:)` can pipeline
+    /// reads ahead of send completion instead of strict one-chunk-at-a-time
+    /// serialization. See `ConnectProxyHandler+Relay.swift`.
+    var inFlightBytesUp = 0
+    var inFlightBytesDown = 0
     var heartbeat: DispatchSourceTimer?
     var beatBytesUp: UInt64 = 0
     var beatBytesDown: UInt64 = 0
