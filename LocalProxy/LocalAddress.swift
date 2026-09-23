@@ -9,7 +9,8 @@ struct InterfaceAddress: Identifiable, Equatable {
     /// Plain-English label for the OS's raw interface name, for display in the UI.
     /// Falls back to the raw name for anything unrecognized (e.g. `utun3`, `llw0`).
     var displayName: String {
-        if name.hasPrefix("en") { return "Wi-Fi" }
+        if name == "en0" { return "Wi-Fi" }
+        if name.hasPrefix("en") { return "Ethernet" } // en1+ on iPhone: USB Ethernet adapters
         if name.hasPrefix("pdp_ip") { return "Cellular" }
         if name.hasPrefix("bridge") { return "Personal Hotspot" }
         if name.hasPrefix("awdl") { return "AirDrop" }

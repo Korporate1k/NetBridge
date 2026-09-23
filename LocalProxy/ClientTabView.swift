@@ -25,6 +25,8 @@ struct ClientTabView: View {
     @State private var portText: String
     @State private var showingQRCode = false
     @State private var showingScanner = false
+    /// Set when a scan arrives while a tunnel is running: restart it on the scanned server once it's down.
+    @State private var reconnectAfterStop = false
 
     init(server: ProxyServer, config: ClientConfiguration, tunnelManager: ClientTunnelManager, showTester: Bool) {
         self.server = server
@@ -71,6 +73,15 @@ struct ClientTabView: View {
                 config = scanned
                 portText = String(scanned.port)
                 showingScanner = false
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                connectToScannedServer()
+            }
+        }
+        .onChange(of: tunnelManager.status) { _, status in
+            // Second half of connectToScannedServer(): the old tunnel is down, start the scanned one.
+            if reconnectAfterStop && status == .disconnected {
+                reconnectAfterStop = false
+                saveAndStart()
             }
         }
     }
@@ -137,7 +148,7 @@ struct ClientTabView: View {
         } header: {
             Text("Pairing")
         } footer: {
-            Text("Show QR Code shares this device's own proxy server (ip:port) so another device can scan it and connect here. Scan QR Code fills in the server above from another device's code.")
+            Text("Show QR Code shares this device's own proxy server (ip:port) so another device can scan it and connect here. Scan QR Code fills in the server above from another device's code and connects to it.")
         }
     }
 
@@ -165,10 +176,26 @@ struct ClientTabView: View {
         if isConnectedOrConnecting {
             tunnelManager.stop()
         } else {
-            tunnelManager.save(config) { result in
-                if case .success = result {
-                    tunnelManager.start()
-                }
+            saveAndStart()
+        }
+    }
+
+    /// A good QR scan connects straight away. If a tunnel is already up (or coming up) it's
+    /// running with the old server, so stop it first and start again once it reports
+    /// `.disconnected` (see the `.onChange(of: tunnelManager.status)` in `body`).
+    private func connectToScannedServer() {
+        if isConnectedOrConnecting || tunnelManager.status == .disconnecting {
+            reconnectAfterStop = true
+            tunnelManager.stop()
+        } else {
+            saveAndStart()
+        }
+    }
+
+    private func saveAndStart() {
+        tunnelManager.save(config) { result in
+            if case .success = result {
+                tunnelManager.start()
             }
         }
     }

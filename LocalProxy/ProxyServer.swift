@@ -194,11 +194,12 @@ final class ProxyServer: ObservableObject {
     /// (independent of `isRunning`) so every tab always shows the same,
     /// current address — not just the Dashboard.
     private func refreshAddresses() {
-        // Cellular is excluded here (display-only picker): the proxy can't
-        // actually be connected to over it. LocalAddress.allIPv4() itself
-        // stays unfiltered since UDPRelay/Socks5Handler need every real
-        // interface for SOCKS5 UDP ASSOCIATE address advertising.
-        let all = LocalAddress.allIPv4().filter { !$0.name.hasPrefix("pdp_ip") }
+        // Cellular and VPN tunnels (utun*) are excluded here (display-only
+        // picker): the proxy can't actually be connected to over them.
+        // LocalAddress.allIPv4() itself stays unfiltered since
+        // UDPRelay/Socks5Handler need every real interface for SOCKS5 UDP
+        // ASSOCIATE address advertising.
+        let all = LocalAddress.allIPv4().filter { !$0.name.hasPrefix("pdp_ip") && !$0.name.hasPrefix("utun") }
         availableAddresses = all
         if let current = localIP, all.contains(where: { $0.ip == current }) {
             return

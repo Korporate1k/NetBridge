@@ -36,12 +36,12 @@ struct HowToGuideView: View {
                                ])
                     deviceCard(title: "iPhone & iPad", systemImage: "ipad.and.iphone",
                                steps: [
-                                "Settings → Wi-Fi → tap the (i) next to your network.",
-                                "Configure Proxy → Manual.",
-                                "Server: \(server.localIP ?? "this device's address")   Port: \(server.port)",
-                                "Save. The same steps apply on iPadOS as on iOS."
+                                "Install NetBridge on the other iPhone or iPad and join the same Wi-Fi or this phone's Personal Hotspot.",
+                                "On this phone, open the Client tab → Show QR Code.",
+                                "On the other device, open the Client tab → Scan QR Code and point it at the code.",
+                                "It connects automatically. Allow the VPN configuration the first time iOS asks."
                                ],
-                               footnote: "NetBridge itself is a universal iPhone app — it also installs and runs on iPad.")
+                               footnote: "All of that device's apps and traffic (TCP and UDP) go through this phone. Tap Disconnect on its Client tab to stop.")
                 } .padding(16)
             }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
