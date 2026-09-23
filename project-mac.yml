@@ -18,6 +18,9 @@ settings:
     DEVELOPMENT_TEAM: DS8AMC8BSV
     CODE_SIGN_STYLE: Automatic
     ENABLE_HARDENED_RUNTIME: YES
+    # Apple Silicon only: the tun2proxy xcframework has just a macos-arm64 slice
+    # (scripts/build-tun2proxy-macos.sh), so a universal archive can't link.
+    ARCHS: arm64
 
 packages:
   LWIPTunnelEngine:

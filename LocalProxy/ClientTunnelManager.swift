@@ -1,5 +1,5 @@
 import Foundation
-import NetworkExtension
+@preconcurrency import NetworkExtension
 
 /// Wraps `NETunnelProviderManager` to configure and control the
 /// `LocalProxyTunnel` Network Extension — the app-side half of the SOCKS5
@@ -176,7 +176,7 @@ final class ClientTunnelManager: ObservableObject {
 
     /// The error that ended the last session, or `nil` if it ended cleanly (user / `scutil --nc stop`). A tunnel
     /// extension that dies on its own ("The VPN session failed because an internal error occurred") reports one.
-    func fetchLastDisconnectError(_ completion: @escaping (Error?) -> Void) {
+    func fetchLastDisconnectError(_ completion: @escaping @Sendable (Error?) -> Void) {
         guard let manager else {
             completion(nil)
             return

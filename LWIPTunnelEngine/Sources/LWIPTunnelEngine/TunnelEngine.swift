@@ -268,7 +268,6 @@ public final class TunnelEngine {
         let fd = appFd
         stateLock.unlock()
         var buf = [UInt8](repeating: 0, count: Int(Self.tunnelMTU) + 64)
-        let bufLen = buf.count
         while !isStopped {
             let keepGoing: Bool = autoreleasepool {
                 let batch = Self.readBatch(fd: fd, buf: &buf, maxBatch: Self.maxBatch)

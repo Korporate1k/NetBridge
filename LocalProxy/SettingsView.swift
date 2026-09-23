@@ -53,8 +53,8 @@ struct SettingsView: View {
         .sheet(isPresented: $showUpgrade) {
             UpgradeView(purchases: purchases, dailyLimitBytes: server.dailyUsage.dailyLimitBytes)
         }
-        .onChange(of: bindVPN) { on in server.egressPathChanged(on ? "Bind to VPN on" : "Bind to VPN off") }
-        .onChange(of: egressInterface) { value in server.egressPathChanged("outbound interface -> \(value)") }
+        .onChange(of: bindVPN) { _, on in server.egressPathChanged(on ? "Bind to VPN on" : "Bind to VPN off") }
+        .onChange(of: egressInterface) { _, value in server.egressPathChanged("outbound interface -> \(value)") }
         #if DEBUG
         .onAppear {
             if ProcessInfo.processInfo.environment["QA_PUSH_UPLOAD_TEST"] == "1" {
@@ -137,7 +137,7 @@ struct SettingsView: View {
             ValueLink("DNS", value: dohEnabled ? "DoH" : "System") {
                 DNSSettingsView()
             }
-            ValueLink("Anti-DPI", value: antiDPIValue) {
+            ValueLink("Traffic Pacing", value: antiDPIValue) {
                 AntiDPISettingsView()
             }
             Toggle("Bind to VPN", isOn: $bindVPN)
@@ -286,16 +286,16 @@ private struct AntiDPISettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Anti-DPI", isOn: $antiDPIEnabled)
+                Toggle("Traffic Pacing", isOn: $antiDPIEnabled)
                 Picker("Tuning", selection: $antiDPITuning) {
                     ForEach(AntiDPITuning.allCases) { option in Text(option.label).tag(option.rawValue) }
                 }
                 .disabled(!antiDPIEnabled)
             } footer: {
-                Text("Splits and paces traffic to resist deep packet inspection and throttling. Light keeps most of your speed; Aggressive costs real throughput.")
+                Text("Sends outgoing data in smaller, evenly spaced pieces. Light keeps most of your speed; Aggressive lowers throughput further.")
             }
         }
-        .navigationTitle("Anti-DPI")
+        .navigationTitle("Traffic Pacing")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
