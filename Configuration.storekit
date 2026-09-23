@@ -3,18 +3,18 @@
   "nonRenewingSubscriptions" : [],
   "products" : [
     {
-      "displayPrice" : "4.99",
+      "displayPrice" : "74.99",
       "familyShareable" : false,
       "internalID" : "0F12BE59-B985-41A9-92CE-D10DBD24B9DA",
       "localizations" : [
         {
-          "description" : "Removes the 5GB/day free-tier cap, forever.",
-          "displayName" : "LocalProxy Pro",
+          "description" : "Removes the daily free-tier cap for life. One-time purchase.",
+          "displayName" : "NetBridge Pro Lifetime",
           "locale" : "en_US"
         }
       ],
       "productID" : "com.Korporate1k.LocalProxy.pro",
-      "referenceName" : "LocalProxy Pro",
+      "referenceName" : "NetBridge Pro Lifetime",
       "type" : "NonConsumable"
     }
   ],
@@ -27,7 +27,37 @@
     "_storefront" : "USA",
     "_storeKitErrors" : []
   },
-  "subscriptionGroups" : [],
+  "subscriptionGroups" : [
+    {
+      "id" : "69D2BBC7-D710-448B-961D-A3892DD49614",
+      "localizations" : [],
+      "name" : "NetBridge Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "winbackOffers" : [],
+          "displayPrice" : "2.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "C0FD3705-CE6C-4299-A22B-AE720C79FBE6",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Removes the daily free-tier cap while subscribed.",
+              "displayName" : "NetBridge Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.Korporate1k.LocalProxy.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "NetBridge Pro Monthly",
+          "subscriptionGroupID" : "69D2BBC7-D710-448B-961D-A3892DD49614",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
   "version" : {
     "major" : 3,
     "minor" : 0

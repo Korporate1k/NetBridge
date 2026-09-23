@@ -307,6 +307,12 @@ final class RemoteConfigManager: ObservableObject {
 
     private func apply(_ config: RemotePromoConfig, persist: Bool) {
         paywallEnabled = config.paywallEnabled
+        #if DEBUG
+        // QA hook, same idea as QA_TAB/QA_AUTOSTART: shows the paywall locally without touching the live
+        // Gist (which would enable it for every user). Set with
+        // `xcrun simctl spawn booted defaults write com.Korporate1k.LocalProxy qa.forcePaywall -bool YES`.
+        if UserDefaults.standard.bool(forKey: "qa.forcePaywall") { paywallEnabled = true }
+        #endif
         showQRCode = config.showQRCode
         showSocks5Tester = config.showSocks5Tester
         showUploadTest = config.showUploadTest

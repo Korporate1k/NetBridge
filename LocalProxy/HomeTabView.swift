@@ -33,12 +33,23 @@ struct HomeTabView: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("NetBridge")
         }
-        .onAppear { trial.refresh() }
+        .onAppear {
+            trial.refresh()
+            #if DEBUG
+            // QA hook (with qa.forcePaywall in RemoteConfig.swift): opens the paywall on launch, since the
+            // simulator can't be tapped from the command line. Set via `simctl spawn … defaults write`.
+            if UserDefaults.standard.bool(forKey: "qa.showUpgrade") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { showUpgrade = true }
+            }
+            #endif
+        }
         .sheet(isPresented: $showQRCode) {
             QRCodeSheet(server: server)
         }
         .sheet(isPresented: $showUpgrade) {
-            UpgradeView(purchases: purchases, dailyLimitBytes: server.dailyUsage.dailyLimitBytes)
+            UpgradeView(purchases: purchases, trial: trial,
+                        usedTodayBytes: server.dailyUsage.bytesUsedToday,
+                        dailyLimitBytes: server.dailyUsage.dailyLimitBytes)
         }
     }
 

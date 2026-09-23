@@ -13,6 +13,7 @@ struct DashboardView: View {
     @State private var selectedTab = 0
     @State private var markCount = 0
     @State private var lastMark: String?
+    @Environment(\.scenePhase) private var scenePhase
 
     private static var wroteSessionHeader = false
 
@@ -100,6 +101,10 @@ struct DashboardView: View {
                         .tag(3)
                 }
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // A subscription can lapse (or be renewed/refunded elsewhere) while the app is in the background.
+            if phase == .active { Task { await purchases.refresh() } }
         }
         .onAppear {
             server.bypassesDailyCap = { !remoteConfig.paywallEnabled || purchases.isPro || trial.isInTrial }

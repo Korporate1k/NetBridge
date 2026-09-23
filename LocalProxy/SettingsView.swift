@@ -51,7 +51,9 @@ struct SettingsView: View {
             #endif
         }
         .sheet(isPresented: $showUpgrade) {
-            UpgradeView(purchases: purchases, dailyLimitBytes: server.dailyUsage.dailyLimitBytes)
+            UpgradeView(purchases: purchases, trial: trial,
+                        usedTodayBytes: server.dailyUsage.bytesUsedToday,
+                        dailyLimitBytes: server.dailyUsage.dailyLimitBytes)
         }
         .onChange(of: bindVPN) { _, on in server.egressPathChanged(on ? "Bind to VPN on" : "Bind to VPN off") }
         .onChange(of: egressInterface) { _, value in server.egressPathChanged("outbound interface -> \(value)") }
@@ -71,24 +73,35 @@ struct SettingsView: View {
 
     private var proSection: some View {
         Section {
-            if purchases.isPro {
-                Label("NetBridge Pro — daily cap removed", systemImage: "checkmark.seal.fill")
-                    .foregroundColor(.green)
-            } else {
-                if trial.isInTrial {
-                    Label("Free trial — \(trial.remainingDescription) left, no daily limit",
-                          systemImage: "sparkles")
-                        .foregroundColor(.accentColor)
-                } else {
-                    InfoRow(label: "Today's usage", value: "\(DailyUsageTracker.formatDecimalGB(server.dailyUsage.bytesUsedToday)) of \(DailyUsageTracker.formatDecimalGB(server.dailyUsage.dailyLimitBytes))")
+            // One row; plans, Restore and Manage Subscription all live on the paywall it opens.
+            Button { showUpgrade = true } label: {
+                HStack {
+                    Label("NetBridge Pro", systemImage: purchases.isPro ? "checkmark.seal.fill" : "bolt.circle")
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text(proValue)
+                        .foregroundColor(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(.secondary.opacity(0.6))
                 }
-                Button("Upgrade to Pro…") { showUpgrade = true }
-                Button("Restore Purchases") { Task { await purchases.restore() } }
             }
-        } header: {
-            Text("NetBridge Pro")
         }
         .onAppear { trial.refresh() }
+    }
+
+    private var proValue: String {
+        switch purchases.proSource {
+        case .lifetime:
+            return "Lifetime"
+        case .subscription:
+            guard let expires = purchases.subscriptionExpires else { return "Monthly" }
+            let date = expires.formatted(.dateTime.month(.abbreviated).day())
+            return "Monthly · \(purchases.willAutoRenew == false ? "ends" : "renews") \(date)"
+        case nil:
+            if trial.isInTrial { return "Trial · \(trial.remainingDescription) left" }
+            return "Free · \(DailyUsageTracker.formatDecimalGB(server.dailyUsage.bytesUsedToday)) of \(DailyUsageTracker.formatDecimalGB(server.dailyUsage.dailyLimitBytes)) today"
+        }
     }
 
     private var proxySection: some View {
