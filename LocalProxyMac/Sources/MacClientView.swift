@@ -9,6 +9,7 @@ import NetworkExtension
 struct MacClientView: View {
     @EnvironmentObject private var model: MacClientModel
     @State private var showingQRCode = false
+    @State private var showingScanner = false
 
     var body: some View {
         NavigationStack {
@@ -26,6 +27,11 @@ struct MacClientView: View {
         }
         .sheet(isPresented: $showingQRCode) {
             ConfigQRSheet(uri: model.config.uriString, hasPassword: !model.config.password.isEmpty)
+        }
+        .sheet(isPresented: $showingScanner) {
+            MacQRScannerSheet { code in
+                model.apply(uri: code)
+            }
         }
     }
 
@@ -62,7 +68,6 @@ struct MacClientView: View {
                 }
             }
             .disabled(!model.canConnect)
-            .keyboardShortcut(.return, modifiers: .command)
 
             if let error = model.tunnel.lastError {
                 Label(error, systemImage: "xmark.octagon.fill")
@@ -97,6 +102,11 @@ struct MacClientView: View {
                 Label("Paste socks5:// Address", systemImage: "doc.on.clipboard")
             }
             Button {
+                showingScanner = true
+            } label: {
+                Label("Scan with Camera…", systemImage: "camera.viewfinder")
+            }
+            Button {
                 chooseQRImage()
             } label: {
                 Label("Import QR Code Image…", systemImage: "qrcode.viewfinder")
@@ -122,7 +132,7 @@ struct MacClientView: View {
         } header: {
             Text("Pairing")
         } footer: {
-            Text("Fill in the server from another device's QR code: paste its address, import a screenshot of the code, or drop the image anywhere on this window. Show QR Code lets a phone scan this server instead.")
+            Text("Connect to another device's server: scan its QR code with the camera, paste its address, import a screenshot of the code, or drop the image anywhere on this window. NetBridge connects as soon as it reads a valid code. Show QR Code lets a phone scan this server instead.")
         }
     }
 

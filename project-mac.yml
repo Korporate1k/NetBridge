@@ -58,10 +58,12 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         LSApplicationCategoryType: public.app-category.utilities
+        NSCameraUsageDescription: NetBridge uses the camera to scan another device's QR code.
     entitlements:
       path: LocalProxyMac/LocalProxyMac.entitlements
       properties:
         com.apple.security.app-sandbox: true
+        com.apple.security.device.camera: true
         com.apple.security.network.client: true
         com.apple.security.network.server: true
         com.apple.security.files.user-selected.read-only: true

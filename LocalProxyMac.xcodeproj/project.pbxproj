@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		14D7EFAAC1E75114750C1073 /* MacDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA46821621685A7639CEF711 /* MacDashboardView.swift */; };
 		268A56A9460BD34E041B2D54 /* Socks5Client in Frameworks */ = {isa = PBXBuildFile; productRef = D9B01E20E97CD64539AC4C9A /* Socks5Client */; };
+		38F42F0ECFF64D2BF4D932C3 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 964B174505DBE54A364BAC07 /* MacSettingsView.swift */; };
 		43CA442F270E33B46DBB4C92 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A1B8EAB479C9F97C01F8D /* KeychainStore.swift */; };
 		4FEB298616930A50D11A2ACF /* MacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD3D67B9E6634F968302C7F /* MacRootView.swift */; };
 		69A7637D83960EDA1549852A /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08CEF2C64D036A25EFCB561 /* PacketTunnelProvider.swift */; };
@@ -22,7 +23,9 @@
 		BC53F965266AD3D067C599B6 /* QRSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B9B0FF43DE181275BF61E9 /* QRSupport.swift */; };
 		C62BBF42E7CC47382186C0FE /* TunnelStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69CEF7BFFCFF6AFD071317D /* TunnelStats.swift */; };
 		CA0B341381C064E1ADA7F149 /* LocalProxyMacTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 514F354E8C07AA007D31CC36 /* LocalProxyMacTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CB85C33CA27F1EB2671CE407 /* MacMenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9FB4C5BB74F10523D06CFC6 /* MacMenuBarView.swift */; };
 		CF8F3F460E4EE5ACD68B1631 /* Socks5ClientTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17F9338F451DED5E1915259 /* Socks5ClientTestView.swift */; };
+		D0D8EB389F9D9DF24CE65EF4 /* MacQRScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A08D27E669585AE2712A1A /* MacQRScanner.swift */; };
 		E5F9B0C811DF7F343CCFF693 /* ClientConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958570C4A98080BF854BC208 /* ClientConfiguration.swift */; };
 		F44ACF97D57A4461E66609BF /* TunnelStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69CEF7BFFCFF6AFD071317D /* TunnelStats.swift */; };
 /* End PBXBuildFile section */
@@ -62,14 +65,17 @@
 		72B9B0FF43DE181275BF61E9 /* QRSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRSupport.swift; sourceTree = "<group>"; };
 		8CD3D67B9E6634F968302C7F /* MacRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRootView.swift; sourceTree = "<group>"; };
 		958570C4A98080BF854BC208 /* ClientConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientConfiguration.swift; sourceTree = "<group>"; };
+		964B174505DBE54A364BAC07 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		AA46821621685A7639CEF711 /* MacDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardView.swift; sourceTree = "<group>"; };
 		B17F9338F451DED5E1915259 /* Socks5ClientTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5ClientTestView.swift; sourceTree = "<group>"; };
 		B69CEF7BFFCFF6AFD071317D /* TunnelStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelStats.swift; sourceTree = "<group>"; };
+		C3A08D27E669585AE2712A1A /* MacQRScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacQRScanner.swift; sourceTree = "<group>"; };
 		C61201842F3385F2B13B8E6F /* MacClientView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacClientView.swift; sourceTree = "<group>"; };
 		E3EC4CF04AE115B4CB1E6336 /* LocalProxyMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalProxyMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EB47A6EC8B3461F5E380E97F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EC587F06B3E9C120E6A8D81B /* Socks5Client */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Socks5Client; path = Socks5Client; sourceTree = SOURCE_ROOT; };
 		F08CEF2C64D036A25EFCB561 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		F9FB4C5BB74F10523D06CFC6 /* MacMenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuBarView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -116,7 +122,10 @@
 				602225F4599777BC5742AA5B /* MacClientModel.swift */,
 				C61201842F3385F2B13B8E6F /* MacClientView.swift */,
 				AA46821621685A7639CEF711 /* MacDashboardView.swift */,
+				F9FB4C5BB74F10523D06CFC6 /* MacMenuBarView.swift */,
+				C3A08D27E669585AE2712A1A /* MacQRScanner.swift */,
 				8CD3D67B9E6634F968302C7F /* MacRootView.swift */,
+				964B174505DBE54A364BAC07 /* MacSettingsView.swift */,
 				23F366C6189C90C431905789 /* MacSupport.swift */,
 				72B9B0FF43DE181275BF61E9 /* QRSupport.swift */,
 			);
@@ -280,7 +289,10 @@
 				B20B491CC0A2C41EF09807F8 /* MacClientModel.swift in Sources */,
 				A0BAB0310088C20D5BC53153 /* MacClientView.swift in Sources */,
 				14D7EFAAC1E75114750C1073 /* MacDashboardView.swift in Sources */,
+				CB85C33CA27F1EB2671CE407 /* MacMenuBarView.swift in Sources */,
+				D0D8EB389F9D9DF24CE65EF4 /* MacQRScanner.swift in Sources */,
 				4FEB298616930A50D11A2ACF /* MacRootView.swift in Sources */,
+				38F42F0ECFF64D2BF4D932C3 /* MacSettingsView.swift in Sources */,
 				9DE6A20A3ACCE962D06B302E /* MacSupport.swift in Sources */,
 				BC53F965266AD3D067C599B6 /* QRSupport.swift in Sources */,
 				CF8F3F460E4EE5ACD68B1631 /* Socks5ClientTestView.swift in Sources */,

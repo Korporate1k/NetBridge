@@ -156,7 +156,9 @@ final class MacClientModel: ObservableObject {
 
     // MARK: - Pairing
 
-    /// Applies a scanned/pasted `socks5://` URI (or bare `host:port`) to the form.
+    /// Applies a scanned/pasted `socks5://` URI (or bare `host:port`) to the form and connects to it,
+    /// matching the iOS scanner. `connect()` saves the new configuration, which ends any session already
+    /// running (with auto-reconnect suppressed), so this also switches servers while connected.
     @discardableResult
     func apply(uri: String) -> Bool {
         guard let parsed = ClientConfiguration(uriString: uri) else {
@@ -165,7 +167,8 @@ final class MacClientModel: ObservableObject {
         }
         config = parsed
         portText = String(parsed.port)
-        pairingMessage = "Filled in \(parsed.host):\(parsed.port)."
+        pairingMessage = "Connecting to \(parsed.host):\(parsed.port)…"
+        connect()
         return true
     }
 
