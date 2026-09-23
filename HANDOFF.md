@@ -2326,3 +2326,62 @@ Tested on the iPhone 17 Pro Max with WARP: TCP and UDP egress through the tunnel
 
 At the owner's request the first build 4 archive was deleted, all working-tree changes were committed on `feature/macos-client`, and build 4 was archived again from that clean tree (build number unchanged at 4, no override; the version bump itself is 3150342). New archive: `~/Library/Developer/Xcode/Archives/2026-09-21/NetBridge 9-21-26, 6.50 AM build 4.xcarchive`. NOT uploaded. Next TestFlight build = 5.
 Commits: (1) outbound interface picker, cellular NAT64, Bind to VPN; (2) macOS client, tunnel engine and packet-tunnel work from earlier sessions, committed as found (includes the 34 MB macOS libtun2proxy.a, like the tracked iOS ones) — not re-verified in this session; (3) this HANDOFF update.
+
+## 2026-09-23: UI cleanup, macOS client features, Pro subscription, LocalProxy → NetBridge rename
+
+Commits on `feature/macos-client`, oldest first:
+- `4b8285d` iOS:
+  - Settings decluttered into Proxy / Network / Advanced, with subpages
+  - Bind to VPN on the main Settings page
+  - QR scan auto-connects in the Client tab
+  - VPN (`utun*`) interfaces hidden from the Dashboard picker; `en1+` labelled Ethernet
+  - How-To iPhone/iPad section uses NetBridge QR pairing only
+- `572f1b8` macOS:
+  - MenuBarExtra; the main scene is a single `Window("main")`
+  - camera QR scanning (AVFoundation + Vision)
+  - pairing auto-connects
+  - Open at Login (SMAppService) and a Connection menu (⌘↩)
+- `6238db7`:
+  - neutral wording for the pacing feature
+  - Mac `ARCHS: arm64` (the tun2proxy xcframework only has a macos-arm64 slice)
+  - Xcode warning fixes
+- `44ab493` Pro:
+  - monthly subscription `com.Korporate1k.LocalProxy.pro.monthly` ($2.99) plus the lifetime `com.Korporate1k.LocalProxy.pro` (now $74.99)
+  - entitlement recomputed from `Transaction.currentEntitlements`, cached, and refreshed on foreground and at expiry
+  - new paywall; Pro is one row in Settings
+  - DEBUG-only QA hooks `qa.forcePaywall` / `qa.showUpgrade`
+  - `docs/privacy.html` draft (contact email is a placeholder)
+- `900afd2`: the pacing setting is shown as "DPI Settings".
+- `f74ba7b` rename:
+
+  | Before | After |
+  |---|---|
+  | `LocalProxy/` | `NetBridge/` |
+  | `LocalProxy.xcodeproj` (scheme `LocalProxy`) | `NetBridge.xcodeproj` (scheme `NetBridge`) |
+  | `LocalProxyTunnel/` | `NetBridgeTunnel/` |
+  | `LocalProxyMac/`, `LocalProxyMac.xcodeproj` | `NetBridgeMac/`, `NetBridgeMac.xcodeproj` |
+  | `LocalProxyMacTunnel/` | `NetBridgeMacTunnel/` |
+  | products `LocalProxy.app` / `LocalProxyTunnel.appex` | `NetBridge.app` / `NetBridgeTunnel.appex` |
+  | IPA `LocalProxy.ipa` | `build/Build/Products/Release-iphoneos/NetBridge.ipa` |
+  | VPN name `LocalProxy Client` | `NetBridge Client` |
+  | tunnel error domain `LocalProxyTunnel` | `NetBridgeTunnel` (both sides) |
+
+  **The repo folder moved to `~/Desktop/NetBridge`**, so older sections above refer to the old paths and names. **Not renamed on purpose:**
+  - bundle IDs `com.Korporate1k.LocalProxy` / `.Tunnel`
+  - the product IDs
+  - the keychain groups `…LocalProxy.shared` / `.persistence` and the app group `group.com.Korporate1k.LocalProxy`
+  - the os_log subsystem
+
+Other state:
+- Mac App Store build 1:
+  - archive "NetBridge Mac 9-23-26, 8.43 AM build 1"
+  - exported `build/appstore-export-mac-build1/NetBridge.pkg` (built before the rename, bundle ID unchanged)
+  - NOT uploaded: the CLI upload failed with an App Store Connect credentials error; use Organizer or Transporter
+  - next Mac build is 2
+- iPhone 17 Pro Max has build 20260923.100417 (renamed).
+- The Mac Debug app at `build/mac` is registered and connected through the phone.
+- Remote config `paywallEnabled` is still false (live Gist not touched).
+- Owner to-dos in App Store Connect:
+  - create the subscription and reprice the lifetime product
+  - add macOS to the NetBridge app
+  - publish the privacy policy and set `PurchaseManager.privacyURL`
