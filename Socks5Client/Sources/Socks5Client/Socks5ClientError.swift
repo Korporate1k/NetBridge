@@ -4,7 +4,7 @@ import Network
 /// Errors a `Socks5Client`/`Socks5UDPAssociation` operation can fail with.
 ///
 /// The `REP`-code cases cover the full RFC 1928 set, including two
-/// (`connectionNotAllowedByRuleset`, `ttlExpired`) that LocalProxy's own
+/// (`connectionNotAllowedByRuleset`, `ttlExpired`) that NetBridge's own
 /// server never sends — a real third-party SOCKS5 server this client dials
 /// can legally return any of them.
 public enum Socks5ClientError: Error {

@@ -1,0 +1,701 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		5f0a1c2e3d4b5a6978695a03 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5f0a1c2e3d4b5a6978695a01 /* PrivacyInfo.xcprivacy */; };
+		5f0a1c2e3d4b5a6978695a04 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5f0a1c2e3d4b5a6978695a02 /* PrivacyInfo.xcprivacy */; };
+		01c86210a007714ed4148501 /* DailyUsageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6403282124a17a34919b8947 /* DailyUsageTracker.swift */; };
+		051885aa70f5e3fe1a2be33f /* UsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98c0d600fbb5630bdb79fcd1 /* UsageHistory.swift */; };
+		0567b5c29dbf38c4b16ebfba /* NetworkDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */; };
+		064cc426265a9a05362f9eed /* LocalAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */; };
+		bb0630e0dc7716289f4af032 /* AntiDPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91e0d80efaa4b6a33212a59e /* AntiDPI.swift */; };
+		22cf2ad52c8c469835476b73 /* TLSClientHelloFragmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = f412d80fce934ca94393f0cc /* TLSClientHelloFragmenter.swift */; };
+		1d7224942fde58860c918c42 /* ContinuousFragmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1207f7df7aeca474fca3627c /* ContinuousFragmenter.swift */; };
+		0858b1d6d35c56fbe2cfb1fa /* NetBridgeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5202167d0f78c85c48299801 /* NetBridgeApp.swift */; };
+		09b3cc8d86b757950011fa4e /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 78abd84349cbb2a960979df6 /* Assets.xcassets */; };
+		0b79554d5e266169198fd546 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26f8e3e814f4f02408d11de1 /* PacketTunnelProvider.swift */; };
+		0c4342f11f794b1780de135f /* Frontend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0442604cc7374884814f9d32 /* Frontend.swift */; };
+		0ff1845e74c35320445d4156 /* RateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = ef094df573c270e7eafe0ea3 /* RateLimiter.swift */; };
+		1619ffee84fdaf0607382f81 /* ConnectionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10ef213f43edb0621a178211 /* ConnectionHistory.swift */; };
+		1fcaed112c934a01b391e21c /* OutboundTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = cc2e805db3ec4f6ca9f36e83 /* OutboundTransport.swift */; };
+		24b21058f16f453c93838d77 /* UDPRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0d01ab072bfd4692948ba02f /* UDPRelay.swift */; };
+		261dd7d9ddd9a90532f9cb5c /* UsageGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581490cab8742fede3884875 /* UsageGraphView.swift */; };
+		34CA243B305BA0390079CB77 /* Socks5Client in Frameworks */ = {isa = PBXBuildFile; productRef = f48ffd1b186d4eb7898c34bc /* Socks5Client */; };
+		34CA243C305BA0390079CB77 /* LWIPTunnelEngine in Frameworks */ = {isa = PBXBuildFile; productRef = af2671387ef71153d437f5d0 /* LWIPTunnelEngine */; };
+		34CA243D305BA0390079CB77 /* Socks5Client in Frameworks */ = {isa = PBXBuildFile; productRef = 11ed79ad4812830d3618a5c9 /* Socks5Client */; };
+		35210a719a9116105303f73e /* TrafficSniffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = b927a4a172141b989786f87f /* TrafficSniffer.swift */; };
+		3bf1c40fccbb98e8cc73e248 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = fc4be6bdf63de7139b3896a2 /* DashboardView.swift */; };
+		6e7cdb9139418b7b3837da5b /* ConnectionHistoryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543360e8c08d5018c71280ee /* ConnectionHistoryListView.swift */; };
+		37d3a1c36e2f15e9116b4f7d /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = b879845095e95372845d43fb /* SettingsView.swift */; };
+		c3cb10d521c880959d553edf /* HomeTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43d1150ce7169c2e69b09eec /* HomeTabView.swift */; };
+		4720ca02baf147cfd107aba7 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04072998f92014f45fd4bdee /* KeychainStore.swift */; };
+		48ca5c4361c3801402829212 /* ListenerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ede2543625401bca2c21a56 /* ListenerConfig.swift */; };
+		4a13f7ac3aad4e5c9ebd97ea /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ff38e5adae6472db26554c2 /* DevicesView.swift */; };
+		5701121baace7fce081ab140 /* ProxyStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = f3e863de76a46020e8c6106c /* ProxyStats.swift */; };
+		5873db04ff5a58d5136db96e /* RemoteConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0c85c9984e54a4769b6c072a /* RemoteConfig.swift */; };
+		5cba320831e82c1ab59997e8 /* ClientTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 333554d55de34d8c98cbf024 /* ClientTabView.swift */; };
+		6fd6454414e647ddbd878e12 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29cdcb3205e1386d5b8762bc /* DebugLog.swift */; };
+		728a74151e753ecf2c3a3e8e /* ProxyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */; };
+		7e885ac28e6b4ae090e1b123 /* Socks5Handler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80cab1e68bad46239046ced0 /* Socks5Handler.swift */; };
+		7f2151c7b91ee847ec494f52 /* ConnectProxyHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */; };
+		456b454ee102497886f6a3fd /* ConnectProxyHandler+Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = d0b8b1e71426fe98820da1cd /* ConnectProxyHandler+Diagnostics.swift */; };
+		7c384136edda4b597f2e3c6a /* ConnectProxyHandler+Relay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346bdde7219c48051ffc71e3 /* ConnectProxyHandler+Relay.swift */; };
+		f56010ec611bdf305d1741c5 /* ConnectProxyHandler+Socks5.swift in Sources */ = {isa = PBXBuildFile; fileRef = cebd2a8543f5c01c1b7cfe6c /* ConnectProxyHandler+Socks5.swift */; };
+		8305f1ac558b154ce4951db2 /* BackgroundKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */; };
+		92e768da8725f7b11c5d2e06 /* ClientConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74957382a5c765fe138622b1 /* ClientConfiguration.swift */; };
+		94f6b92f6e366d321dcc7685 /* GlassEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = e6071b257c4b36557492a0ed /* GlassEffects.swift */; };
+		9d69c565f94abd4fb08a945c /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = dad80ae70ab065a24817ad32 /* QRScannerView.swift */; };
+		a358f6b7e9e27297806e455e /* Resources/GeoIPv4.bin in Resources */ = {isa = PBXBuildFile; fileRef = bb8ef462306577597b3ecb5f /* Resources/GeoIPv4.bin */; };
+		a55aa58f0885d504335d20e7 /* UpgradeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = fa107942bc399fcfe1a74e86 /* UpgradeView.swift */; };
+		b4f144adbe2bef210d347d26 /* HowToGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = d3c39ed0d8bb7df1945e99ef /* HowToGuideView.swift */; };
+		b758ad658dca020f056a09ef /* TLSClientHello.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9493e9186e453e2c60bb4314 /* TLSClientHello.swift */; };
+		babbc7a4d1134285beed4b21 /* DeviceRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */; };
+		be44418b3c258b74904c499f /* DoHResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5aa9448cd4b58946811b227b /* DoHResolver.swift */; };
+		bf17fc8045cc2a3523b693fd /* TrialManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = bb9da7341c4f18b85ea59ac3 /* TrialManager.swift */; };
+		c86667439aff4e8c121fd02f /* GeoIPLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9315489a9c02ec975030e252 /* GeoIPLookup.swift */; };
+		cd9e2ff2dc1c73ab7f72afff /* QRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = c6c1e91ad834516dcf4d5e1a /* QRCodeView.swift */; };
+		ce9d0603d2a861984a135b20 /* ClientTunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = b5a6fcdf66d73c7a68eb0442 /* ClientTunnelManager.swift */; };
+		e113ccb22d71f86f489cf84d /* ProxyServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = b479143169eda996b7fccb52 /* ProxyServer.swift */; };
+		e31851a0c3e72e6a5b000245 /* NetBridgeTunnel.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = ad213c1e7770ca959c26769c /* NetBridgeTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		e95d1f410b6447d6097b5207 /* PurchaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = d490b4d74db25861645c70f6 /* PurchaseManager.swift */; };
+		ecbe162e7fa165b9274d661a /* ProfilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74e950c054cd99ee827e2da5 /* ProfilesView.swift */; };
+		f49831eac5754f36aea3b524 /* UploadThroughputTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562d13b08e384ea99d870d57 /* UploadThroughputTestView.swift */; };
+		fb0bda5fac7d207e670afeb5 /* Socks5ClientTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = d77765b08fa5936da37239af /* Socks5ClientTestView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		aa1e83ee2068a062e23838f5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = a466b6ff50f6735f3503533a /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 570d6c8d5e7e4b9935789789;
+			remoteInfo = NetBridgeTunnel;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		b803f3f32e810dcdb1dd4e43 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				e31851a0c3e72e6a5b000245 /* NetBridgeTunnel.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		5f0a1c2e3d4b5a6978695a01 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		5f0a1c2e3d4b5a6978695a02 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		04072998f92014f45fd4bdee /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		0442604cc7374884814f9d32 /* Frontend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Frontend.swift; sourceTree = "<group>"; };
+		0c85c9984e54a4769b6c072a /* RemoteConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteConfig.swift; sourceTree = "<group>"; };
+		0d01ab072bfd4692948ba02f /* UDPRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UDPRelay.swift; sourceTree = "<group>"; };
+		0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRegistry.swift; sourceTree = "<group>"; };
+		10ef213f43edb0621a178211 /* ConnectionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionHistory.swift; sourceTree = "<group>"; };
+		26f8e3e814f4f02408d11de1 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		29cdcb3205e1386d5b8762bc /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
+		333554d55de34d8c98cbf024 /* ClientTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientTabView.swift; sourceTree = "<group>"; };
+		39ef43a4b4d7c156f2c554fc /* NetBridgeTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NetBridgeTunnel.entitlements; sourceTree = "<group>"; };
+		40babfa11e8d3feb59284b3c /* NetBridge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NetBridge.entitlements; sourceTree = "<group>"; };
+		446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectProxyHandler.swift; sourceTree = "<group>"; };
+		d0b8b1e71426fe98820da1cd /* ConnectProxyHandler+Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectProxyHandler+Diagnostics.swift"; sourceTree = "<group>"; };
+		346bdde7219c48051ffc71e3 /* ConnectProxyHandler+Relay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectProxyHandler+Relay.swift"; sourceTree = "<group>"; };
+		cebd2a8543f5c01c1b7cfe6c /* ConnectProxyHandler+Socks5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectProxyHandler+Socks5.swift"; sourceTree = "<group>"; };
+		5202167d0f78c85c48299801 /* NetBridgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetBridgeApp.swift; sourceTree = "<group>"; };
+		530763cba24ada874f01101a /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		562d13b08e384ea99d870d57 /* UploadThroughputTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadThroughputTestView.swift; sourceTree = "<group>"; };
+		581490cab8742fede3884875 /* UsageGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageGraphView.swift; sourceTree = "<group>"; };
+		5aa9448cd4b58946811b227b /* DoHResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoHResolver.swift; sourceTree = "<group>"; };
+		5ede2543625401bca2c21a56 /* ListenerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenerConfig.swift; sourceTree = "<group>"; };
+		5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeeper.swift; sourceTree = "<group>"; };
+		6403282124a17a34919b8947 /* DailyUsageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyUsageTracker.swift; sourceTree = "<group>"; };
+		74957382a5c765fe138622b1 /* ClientConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientConfiguration.swift; sourceTree = "<group>"; };
+		74e950c054cd99ee827e2da5 /* ProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesView.swift; sourceTree = "<group>"; };
+		78abd84349cbb2a960979df6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		80cab1e68bad46239046ced0 /* Socks5Handler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5Handler.swift; sourceTree = "<group>"; };
+		9315489a9c02ec975030e252 /* GeoIPLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoIPLookup.swift; sourceTree = "<group>"; };
+		9493e9186e453e2c60bb4314 /* TLSClientHello.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TLSClientHello.swift; sourceTree = "<group>"; };
+		98c0d600fbb5630bdb79fcd1 /* UsageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHistory.swift; sourceTree = "<group>"; };
+		9ff38e5adae6472db26554c2 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
+		ad213c1e7770ca959c26769c /* NetBridgeTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NetBridgeTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		b479143169eda996b7fccb52 /* ProxyServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyServer.swift; sourceTree = "<group>"; };
+		b5a6fcdf66d73c7a68eb0442 /* ClientTunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientTunnelManager.swift; sourceTree = "<group>"; };
+		b927a4a172141b989786f87f /* TrafficSniffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficSniffer.swift; sourceTree = "<group>"; };
+		bb8ef462306577597b3ecb5f /* Resources/GeoIPv4.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = Resources/GeoIPv4.bin; sourceTree = "<group>"; };
+		bb9da7341c4f18b85ea59ac3 /* TrialManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrialManager.swift; sourceTree = "<group>"; };
+		c6c1e91ad834516dcf4d5e1a /* QRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeView.swift; sourceTree = "<group>"; };
+		cc2e805db3ec4f6ca9f36e83 /* OutboundTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundTransport.swift; sourceTree = "<group>"; };
+		d3c39ed0d8bb7df1945e99ef /* HowToGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HowToGuideView.swift; sourceTree = "<group>"; };
+		d490b4d74db25861645c70f6 /* PurchaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PurchaseManager.swift; sourceTree = "<group>"; };
+		d77765b08fa5936da37239af /* Socks5ClientTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5ClientTestView.swift; sourceTree = "<group>"; };
+		dad80ae70ab065a24817ad32 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		e6071b257c4b36557492a0ed /* GlassEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassEffects.swift; sourceTree = "<group>"; };
+		e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkDiagnostics.swift; sourceTree = "<group>"; };
+		e6c38930840264262e54f221 /* NetBridge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NetBridge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyProfile.swift; sourceTree = "<group>"; };
+		ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAddress.swift; sourceTree = "<group>"; };
+		91e0d80efaa4b6a33212a59e /* AntiDPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntiDPI.swift; sourceTree = "<group>"; };
+		f412d80fce934ca94393f0cc /* TLSClientHelloFragmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TLSClientHelloFragmenter.swift; sourceTree = "<group>"; };
+		1207f7df7aeca474fca3627c /* ContinuousFragmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuousFragmenter.swift; sourceTree = "<group>"; };
+		ef094df573c270e7eafe0ea3 /* RateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateLimiter.swift; sourceTree = "<group>"; };
+		f3e863de76a46020e8c6106c /* ProxyStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyStats.swift; sourceTree = "<group>"; };
+		fa107942bc399fcfe1a74e86 /* UpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpgradeView.swift; sourceTree = "<group>"; };
+		fb82de537fd36a102a20e295 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		fc4be6bdf63de7139b3896a2 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		543360e8c08d5018c71280ee /* ConnectionHistoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionHistoryListView.swift; sourceTree = "<group>"; };
+		b879845095e95372845d43fb /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		43d1150ce7169c2e69b09eec /* HomeTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTabView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5837a8eb41896b3c7c553358 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				34CA243B305BA0390079CB77 /* Socks5Client in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		a40750c74db73337b1329b3a /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				34CA243D305BA0390079CB77 /* Socks5Client in Frameworks */,
+				34CA243C305BA0390079CB77 /* LWIPTunnelEngine in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4a9df4e56bdb65a514810df1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				e6c38930840264262e54f221 /* NetBridge.app */,
+				ad213c1e7770ca959c26769c /* NetBridgeTunnel.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		560826c8c38ad18ce880f553 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		62625e10c4bbc0123df6d775 /* AntiDPI */ = {
+			isa = PBXGroup;
+			children = (
+				91e0d80efaa4b6a33212a59e /* AntiDPI.swift */,
+				f412d80fce934ca94393f0cc /* TLSClientHelloFragmenter.swift */,
+				1207f7df7aeca474fca3627c /* ContinuousFragmenter.swift */,
+			);
+			path = AntiDPI;
+			sourceTree = "<group>";
+		};
+		8b290e3d2cab120742f9d3d3 /* NetBridge */ = {
+			isa = PBXGroup;
+			children = (
+				62625e10c4bbc0123df6d775 /* AntiDPI */,
+				5202167d0f78c85c48299801 /* NetBridgeApp.swift */,
+				f3e863de76a46020e8c6106c /* ProxyStats.swift */,
+				b479143169eda996b7fccb52 /* ProxyServer.swift */,
+				446f717eb5f99112a65ae7a9 /* ConnectProxyHandler.swift */,
+				d0b8b1e71426fe98820da1cd /* ConnectProxyHandler+Diagnostics.swift */,
+				346bdde7219c48051ffc71e3 /* ConnectProxyHandler+Relay.swift */,
+				cebd2a8543f5c01c1b7cfe6c /* ConnectProxyHandler+Socks5.swift */,
+				ed2fdc187e9cc700f002ff31 /* LocalAddress.swift */,
+				5ede2543625401bca2c21a56 /* ListenerConfig.swift */,
+				ef094df573c270e7eafe0ea3 /* RateLimiter.swift */,
+				5aa9448cd4b58946811b227b /* DoHResolver.swift */,
+				10ef213f43edb0621a178211 /* ConnectionHistory.swift */,
+				e9ac82c53e15e33c88a29df4 /* ProxyProfile.swift */,
+				c6c1e91ad834516dcf4d5e1a /* QRCodeView.swift */,
+				98c0d600fbb5630bdb79fcd1 /* UsageHistory.swift */,
+				581490cab8742fede3884875 /* UsageGraphView.swift */,
+				74e950c054cd99ee827e2da5 /* ProfilesView.swift */,
+				e6071b257c4b36557492a0ed /* GlassEffects.swift */,
+				d3c39ed0d8bb7df1945e99ef /* HowToGuideView.swift */,
+				6403282124a17a34919b8947 /* DailyUsageTracker.swift */,
+				d490b4d74db25861645c70f6 /* PurchaseManager.swift */,
+				fa107942bc399fcfe1a74e86 /* UpgradeView.swift */,
+				bb9da7341c4f18b85ea59ac3 /* TrialManager.swift */,
+				04072998f92014f45fd4bdee /* KeychainStore.swift */,
+				0c85c9984e54a4769b6c072a /* RemoteConfig.swift */,
+				5f9647b27c25ca5ddbd94002 /* BackgroundKeeper.swift */,
+				fc4be6bdf63de7139b3896a2 /* DashboardView.swift */,
+				543360e8c08d5018c71280ee /* ConnectionHistoryListView.swift */,
+				b879845095e95372845d43fb /* SettingsView.swift */,
+				43d1150ce7169c2e69b09eec /* HomeTabView.swift */,
+				29cdcb3205e1386d5b8762bc /* DebugLog.swift */,
+				e638118321c4da9c87043d30 /* NetworkDiagnostics.swift */,
+				0442604cc7374884814f9d32 /* Frontend.swift */,
+				cc2e805db3ec4f6ca9f36e83 /* OutboundTransport.swift */,
+				80cab1e68bad46239046ced0 /* Socks5Handler.swift */,
+				0d01ab072bfd4692948ba02f /* UDPRelay.swift */,
+				0ef96b6a42b54534a71e337b /* DeviceRegistry.swift */,
+				9ff38e5adae6472db26554c2 /* DevicesView.swift */,
+				d77765b08fa5936da37239af /* Socks5ClientTestView.swift */,
+				562d13b08e384ea99d870d57 /* UploadThroughputTestView.swift */,
+				9493e9186e453e2c60bb4314 /* TLSClientHello.swift */,
+				b927a4a172141b989786f87f /* TrafficSniffer.swift */,
+				9315489a9c02ec975030e252 /* GeoIPLookup.swift */,
+				bb8ef462306577597b3ecb5f /* Resources/GeoIPv4.bin */,
+				74957382a5c765fe138622b1 /* ClientConfiguration.swift */,
+				b5a6fcdf66d73c7a68eb0442 /* ClientTunnelManager.swift */,
+				dad80ae70ab065a24817ad32 /* QRScannerView.swift */,
+				333554d55de34d8c98cbf024 /* ClientTabView.swift */,
+				40babfa11e8d3feb59284b3c /* NetBridge.entitlements */,
+				530763cba24ada874f01101a /* Info.plist */,
+				78abd84349cbb2a960979df6 /* Assets.xcassets */,
+				5f0a1c2e3d4b5a6978695a01 /* PrivacyInfo.xcprivacy */,
+			);
+			path = NetBridge;
+			sourceTree = "<group>";
+		};
+		a9602a6a5f553371e38666e2 /* NetBridgeTunnel */ = {
+			isa = PBXGroup;
+			children = (
+				26f8e3e814f4f02408d11de1 /* PacketTunnelProvider.swift */,
+				5f0a1c2e3d4b5a6978695a02 /* PrivacyInfo.xcprivacy */,
+				fb82de537fd36a102a20e295 /* Info.plist */,
+				39ef43a4b4d7c156f2c554fc /* NetBridgeTunnel.entitlements */,
+			);
+			path = NetBridgeTunnel;
+			sourceTree = "<group>";
+		};
+		e62a025eb0a40c44b897744c = {
+			isa = PBXGroup;
+			children = (
+				8b290e3d2cab120742f9d3d3 /* NetBridge */,
+				a9602a6a5f553371e38666e2 /* NetBridgeTunnel */,
+				560826c8c38ad18ce880f553 /* Frameworks */,
+				4a9df4e56bdb65a514810df1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		423ae86f8921918da41f3675 /* NetBridge */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2e7910abb91582fd27f74415 /* Build configuration list for PBXNativeTarget "NetBridge" */;
+			buildPhases = (
+				eb83ce0627b205f1751faadf /* Sources */,
+				5837a8eb41896b3c7c553358 /* Frameworks */,
+				8ae0693bb0213a4fe6818987 /* Resources */,
+				b803f3f32e810dcdb1dd4e43 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				eba792dc6d04ffd21be12ff9 /* PBXTargetDependency */,
+			);
+			name = NetBridge;
+			packageProductDependencies = (
+				f48ffd1b186d4eb7898c34bc /* Socks5Client */,
+			);
+			productName = NetBridge;
+			productReference = e6c38930840264262e54f221 /* NetBridge.app */;
+			productType = "com.apple.product-type.application";
+		};
+		570d6c8d5e7e4b9935789789 /* NetBridgeTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2868d407505d936b30e6d66f /* Build configuration list for PBXNativeTarget "NetBridgeTunnel" */;
+			buildPhases = (
+				d9ec552a0a2b3502b950daf7 /* Sources */,
+				a40750c74db73337b1329b3a /* Frameworks */,
+				5f0a1c2e3d4b5a6978695a05 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NetBridgeTunnel;
+			packageProductDependencies = (
+				af2671387ef71153d437f5d0 /* LWIPTunnelEngine */,
+				11ed79ad4812830d3618a5c9 /* Socks5Client */,
+			);
+			productName = NetBridgeTunnel;
+			productReference = ad213c1e7770ca959c26769c /* NetBridgeTunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		a466b6ff50f6735f3503533a /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					423ae86f8921918da41f3675 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					570d6c8d5e7e4b9935789789 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 8ccf29ec6f9f870bb48d1191 /* Build configuration list for PBXProject "NetBridge" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = e62a025eb0a40c44b897744c;
+			packageReferences = (
+				5502300d685165c733b46e0f /* XCLocalSwiftPackageReference "Socks5Client" */,
+				abfa3f10227c6fed204650a9 /* XCLocalSwiftPackageReference "LWIPTunnelEngine" */,
+			);
+			productRefGroup = 4a9df4e56bdb65a514810df1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				423ae86f8921918da41f3675 /* NetBridge */,
+				570d6c8d5e7e4b9935789789 /* NetBridgeTunnel */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5f0a1c2e3d4b5a6978695a05 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5f0a1c2e3d4b5a6978695a04 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8ae0693bb0213a4fe6818987 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				09b3cc8d86b757950011fa4e /* Assets.xcassets in Resources */,
+				5f0a1c2e3d4b5a6978695a03 /* PrivacyInfo.xcprivacy in Resources */,
+				a358f6b7e9e27297806e455e /* Resources/GeoIPv4.bin in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		d9ec552a0a2b3502b950daf7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0b79554d5e266169198fd546 /* PacketTunnelProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		eb83ce0627b205f1751faadf /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0858b1d6d35c56fbe2cfb1fa /* NetBridgeApp.swift in Sources */,
+				5701121baace7fce081ab140 /* ProxyStats.swift in Sources */,
+				e113ccb22d71f86f489cf84d /* ProxyServer.swift in Sources */,
+				7f2151c7b91ee847ec494f52 /* ConnectProxyHandler.swift in Sources */,
+				456b454ee102497886f6a3fd /* ConnectProxyHandler+Diagnostics.swift in Sources */,
+				7c384136edda4b597f2e3c6a /* ConnectProxyHandler+Relay.swift in Sources */,
+				f56010ec611bdf305d1741c5 /* ConnectProxyHandler+Socks5.swift in Sources */,
+				064cc426265a9a05362f9eed /* LocalAddress.swift in Sources */,
+				bb0630e0dc7716289f4af032 /* AntiDPI.swift in Sources */,
+				22cf2ad52c8c469835476b73 /* TLSClientHelloFragmenter.swift in Sources */,
+				1d7224942fde58860c918c42 /* ContinuousFragmenter.swift in Sources */,
+				48ca5c4361c3801402829212 /* ListenerConfig.swift in Sources */,
+				0ff1845e74c35320445d4156 /* RateLimiter.swift in Sources */,
+				be44418b3c258b74904c499f /* DoHResolver.swift in Sources */,
+				1619ffee84fdaf0607382f81 /* ConnectionHistory.swift in Sources */,
+				728a74151e753ecf2c3a3e8e /* ProxyProfile.swift in Sources */,
+				cd9e2ff2dc1c73ab7f72afff /* QRCodeView.swift in Sources */,
+				051885aa70f5e3fe1a2be33f /* UsageHistory.swift in Sources */,
+				261dd7d9ddd9a90532f9cb5c /* UsageGraphView.swift in Sources */,
+				ecbe162e7fa165b9274d661a /* ProfilesView.swift in Sources */,
+				94f6b92f6e366d321dcc7685 /* GlassEffects.swift in Sources */,
+				b4f144adbe2bef210d347d26 /* HowToGuideView.swift in Sources */,
+				01c86210a007714ed4148501 /* DailyUsageTracker.swift in Sources */,
+				e95d1f410b6447d6097b5207 /* PurchaseManager.swift in Sources */,
+				a55aa58f0885d504335d20e7 /* UpgradeView.swift in Sources */,
+				bf17fc8045cc2a3523b693fd /* TrialManager.swift in Sources */,
+				4720ca02baf147cfd107aba7 /* KeychainStore.swift in Sources */,
+				5873db04ff5a58d5136db96e /* RemoteConfig.swift in Sources */,
+				8305f1ac558b154ce4951db2 /* BackgroundKeeper.swift in Sources */,
+				3bf1c40fccbb98e8cc73e248 /* DashboardView.swift in Sources */,
+				6e7cdb9139418b7b3837da5b /* ConnectionHistoryListView.swift in Sources */,
+				37d3a1c36e2f15e9116b4f7d /* SettingsView.swift in Sources */,
+				c3cb10d521c880959d553edf /* HomeTabView.swift in Sources */,
+				6fd6454414e647ddbd878e12 /* DebugLog.swift in Sources */,
+				0567b5c29dbf38c4b16ebfba /* NetworkDiagnostics.swift in Sources */,
+				0c4342f11f794b1780de135f /* Frontend.swift in Sources */,
+				1fcaed112c934a01b391e21c /* OutboundTransport.swift in Sources */,
+				7e885ac28e6b4ae090e1b123 /* Socks5Handler.swift in Sources */,
+				24b21058f16f453c93838d77 /* UDPRelay.swift in Sources */,
+				babbc7a4d1134285beed4b21 /* DeviceRegistry.swift in Sources */,
+				4a13f7ac3aad4e5c9ebd97ea /* DevicesView.swift in Sources */,
+				fb0bda5fac7d207e670afeb5 /* Socks5ClientTestView.swift in Sources */,
+				f49831eac5754f36aea3b524 /* UploadThroughputTestView.swift in Sources */,
+				b758ad658dca020f056a09ef /* TLSClientHello.swift in Sources */,
+				35210a719a9116105303f73e /* TrafficSniffer.swift in Sources */,
+				c86667439aff4e8c121fd02f /* GeoIPLookup.swift in Sources */,
+				92e768da8725f7b11c5d2e06 /* ClientConfiguration.swift in Sources */,
+				ce9d0603d2a861984a135b20 /* ClientTunnelManager.swift in Sources */,
+				9d69c565f94abd4fb08a945c /* QRScannerView.swift in Sources */,
+				5cba320831e82c1ab59997e8 /* ClientTabView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		eba792dc6d04ffd21be12ff9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 570d6c8d5e7e4b9935789789 /* NetBridgeTunnel */;
+			targetProxy = aa1e83ee2068a062e23838f5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0924b5b55ede602e60d1083c /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = NetBridge/NetBridge.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NetBridge/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NetBridge;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "NetBridge uses the camera to scan a QR code containing another device's server configuration.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NetBridge listens on the local network so other devices can connect to it.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "NetBridge uses your location in the background to keep the proxy running while the app is not on screen.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "NetBridge uses your location to keep the proxy running.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		10cad7926bb5bca542731139 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NetBridgeTunnel/NetBridgeTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NetBridgeTunnel/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy.Tunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		3274c3c4075c153fe32ca689 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		59f48bf2402501d7b5392dc7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NetBridgeTunnel/NetBridgeTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NetBridgeTunnel/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy.Tunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		a71bc2a9b270964d4bc5b397 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		f445b27ebaef3e3ed604d19e /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = NetBridge/NetBridge.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NetBridge/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NetBridge;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "NetBridge uses the camera to scan a QR code containing another device's server configuration.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NetBridge listens on the local network so other devices can connect to it.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "NetBridge uses your location in the background to keep the proxy running while the app is not on screen.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "NetBridge uses your location to keep the proxy running.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2868d407505d936b30e6d66f /* Build configuration list for PBXNativeTarget "NetBridgeTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				10cad7926bb5bca542731139 /* Debug */,
+				59f48bf2402501d7b5392dc7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2e7910abb91582fd27f74415 /* Build configuration list for PBXNativeTarget "NetBridge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0924b5b55ede602e60d1083c /* Debug */,
+				f445b27ebaef3e3ed604d19e /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8ccf29ec6f9f870bb48d1191 /* Build configuration list for PBXProject "NetBridge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				a71bc2a9b270964d4bc5b397 /* Debug */,
+				3274c3c4075c153fe32ca689 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		5502300d685165c733b46e0f /* XCLocalSwiftPackageReference "Socks5Client" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Socks5Client;
+		};
+		abfa3f10227c6fed204650a9 /* XCLocalSwiftPackageReference "LWIPTunnelEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LWIPTunnelEngine;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		11ed79ad4812830d3618a5c9 /* Socks5Client */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Socks5Client;
+		};
+		af2671387ef71153d437f5d0 /* LWIPTunnelEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LWIPTunnelEngine;
+		};
+		f48ffd1b186d4eb7898c34bc /* Socks5Client */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Socks5Client;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = a466b6ff50f6735f3503533a /* Project object */;
+}

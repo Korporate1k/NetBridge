@@ -7,7 +7,7 @@ import Glibc
 
 /// RFC 1928 SOCKS5 wire-format — client role only: builds the greeting and
 /// request, parses the server's method-selection and reply. This is the
-/// inverse of LocalProxy's own server-side `Socks5Handler` (which parses
+/// inverse of NetBridge's own server-side `Socks5Handler` (which parses
 /// requests and builds replies) — kept as a separate, self-contained
 /// implementation rather than shared code, since `Socks5Handler` lives in
 /// the app target and isn't importable from a package, and the two roles

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SOCKS5 UDP ASSOCIATE QA against a running LocalProxy server."""
+"""SOCKS5 UDP ASSOCIATE QA against a running NetBridge server."""
 import socket, struct, sys, threading, time, os, random
 
 PROXY = ("127.0.0.1", int(os.environ.get("PROXY_PORT", "18080")))

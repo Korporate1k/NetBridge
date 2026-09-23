@@ -1,0 +1,589 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		164B8E5F98CBBA50C88AD1E3 /* MacDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99218ECBDF674930DA9EBFA4 /* MacDashboardView.swift */; };
+		1E67A6346D39A9E819A9F0A9 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E106111279077DFB5141AD8 /* KeychainStore.swift */; };
+		269905A9020A3DD453FDB7B4 /* LWIPTunnelEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 121FCF3B6933AD976FE6CA52 /* LWIPTunnelEngine */; };
+		39B6259FCBBA2DE8078EDEA7 /* NetBridgeMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2560E2C2A11B21882DA2453 /* NetBridgeMacApp.swift */; };
+		39FC8297DB96397C6F6E91C5 /* MacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC9558B1EA927DB9B0A3437B /* MacRootView.swift */; };
+		3FBFE868B7921EF4E1A5919F /* MacClientModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE4BDD928285CFC53A184CAF /* MacClientModel.swift */; };
+		4A7AE28C02D1B2567321459A /* MacQRScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE8DA816B489F033EF7E433 /* MacQRScanner.swift */; };
+		720028FD989D4C8C15BF5B6A /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8208FBEB2164521A850FA9C4 /* MacSettingsView.swift */; };
+		87AAF16817ABE19CBFDCF141 /* MacMenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D8F9DF86BEF46FFB1B6912E /* MacMenuBarView.swift */; };
+		9B7041A2DAEEB541E07C0A81 /* Socks5ClientTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE02AAD0CC48BA330958C97 /* Socks5ClientTestView.swift */; };
+		9FA80F958432E6EE3F5A63DD /* MacClientView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E2697A697965C653A37DD7C /* MacClientView.swift */; };
+		AD2410308315030FB7B0B7B8 /* ClientTunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DC5F4B5CD66ED8B3CDC597 /* ClientTunnelManager.swift */; };
+		AF4513DD00361F349D2B1113 /* Socks5Client in Frameworks */ = {isa = PBXBuildFile; productRef = 55A42C63A978291DDA697C7B /* Socks5Client */; };
+		CDC315B3B2FDD223BCF79598 /* QRSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04ED67BA36AAA43A1ECAFA3 /* QRSupport.swift */; };
+		CFA11EF4532658D2A333950E /* MacSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCCECF7235EC515A647F03F8 /* MacSupport.swift */; };
+		D528BA317DA7CDE1129C171F /* TunnelStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB274F148CF05EC73A6B1AA /* TunnelStats.swift */; };
+		E705268FD1D7018EE3F85CAE /* TunnelStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB274F148CF05EC73A6B1AA /* TunnelStats.swift */; };
+		EF04C0B3BE80978457BFF2F3 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E147B3C95D1152DE3050810 /* PacketTunnelProvider.swift */; };
+		EFE990375B6C226117A2989B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2BFEF1B26AE7ED0B708020D2 /* Assets.xcassets */; };
+		F7B358B548415083A3407C45 /* ClientConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6FB87579519EAAFFB822179 /* ClientConfiguration.swift */; };
+		F98F40BEF7C1CFF821C3D6AB /* NetBridgeMacTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 72ACABC74E3490FBB9F8E1B0 /* NetBridgeMacTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C523D77813CBBC36B7DCED8C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FA8D15CD15CB0B831B28A954 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8ED272D4EF5E70A1621357F6;
+			remoteInfo = NetBridgeMacTunnel;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		318952AEF4AD69690808C539 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F98F40BEF7C1CFF821C3D6AB /* NetBridgeMacTunnel.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		001086BE86C7E49966C78B8E /* LWIPTunnelEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LWIPTunnelEngine; path = LWIPTunnelEngine; sourceTree = SOURCE_ROOT; };
+		1BB274F148CF05EC73A6B1AA /* TunnelStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelStats.swift; sourceTree = "<group>"; };
+		1CE8DA816B489F033EF7E433 /* MacQRScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacQRScanner.swift; sourceTree = "<group>"; };
+		2BFEF1B26AE7ED0B708020D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3E147B3C95D1152DE3050810 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		5E2697A697965C653A37DD7C /* MacClientView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacClientView.swift; sourceTree = "<group>"; };
+		6D8F9DF86BEF46FFB1B6912E /* MacMenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuBarView.swift; sourceTree = "<group>"; };
+		6EE02AAD0CC48BA330958C97 /* Socks5ClientTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Socks5ClientTestView.swift; sourceTree = "<group>"; };
+		72ACABC74E3490FBB9F8E1B0 /* NetBridgeMacTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NetBridgeMacTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8208FBEB2164521A850FA9C4 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
+		8E106111279077DFB5141AD8 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		99218ECBDF674930DA9EBFA4 /* MacDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardView.swift; sourceTree = "<group>"; };
+		B7F460E801FEF9C9BB5B7582 /* Socks5Client */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Socks5Client; path = Socks5Client; sourceTree = SOURCE_ROOT; };
+		CE4BDD928285CFC53A184CAF /* MacClientModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacClientModel.swift; sourceTree = "<group>"; };
+		D6FB87579519EAAFFB822179 /* ClientConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientConfiguration.swift; sourceTree = "<group>"; };
+		E04ED67BA36AAA43A1ECAFA3 /* QRSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRSupport.swift; sourceTree = "<group>"; };
+		E11B9E65A22839AB6BADE3DC /* NetBridgeMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NetBridgeMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2560E2C2A11B21882DA2453 /* NetBridgeMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetBridgeMacApp.swift; sourceTree = "<group>"; };
+		EC9558B1EA927DB9B0A3437B /* MacRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRootView.swift; sourceTree = "<group>"; };
+		F4DC5F4B5CD66ED8B3CDC597 /* ClientTunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientTunnelManager.swift; sourceTree = "<group>"; };
+		FCCECF7235EC515A647F03F8 /* MacSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSupport.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F0B5930A32DE1EC2566BB543 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				269905A9020A3DD453FDB7B4 /* LWIPTunnelEngine in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F4956B11357B01B7949398B9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AF4513DD00361F349D2B1113 /* Socks5Client in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		032BD1CCE910D4486C27A5A3 /* NetBridgeMac */ = {
+			isa = PBXGroup;
+			children = (
+				2BFEF1B26AE7ED0B708020D2 /* Assets.xcassets */,
+				45B49DDF0C244C97C9E84E33 /* Shared */,
+				0DD293D8755B8D5DC934758B /* Sources */,
+			);
+			path = NetBridgeMac;
+			sourceTree = "<group>";
+		};
+		0DD293D8755B8D5DC934758B /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				CE4BDD928285CFC53A184CAF /* MacClientModel.swift */,
+				5E2697A697965C653A37DD7C /* MacClientView.swift */,
+				99218ECBDF674930DA9EBFA4 /* MacDashboardView.swift */,
+				6D8F9DF86BEF46FFB1B6912E /* MacMenuBarView.swift */,
+				1CE8DA816B489F033EF7E433 /* MacQRScanner.swift */,
+				EC9558B1EA927DB9B0A3437B /* MacRootView.swift */,
+				8208FBEB2164521A850FA9C4 /* MacSettingsView.swift */,
+				FCCECF7235EC515A647F03F8 /* MacSupport.swift */,
+				E2560E2C2A11B21882DA2453 /* NetBridgeMacApp.swift */,
+				E04ED67BA36AAA43A1ECAFA3 /* QRSupport.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		22D9657FE8D441AA7738ACFA /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				001086BE86C7E49966C78B8E /* LWIPTunnelEngine */,
+				B7F460E801FEF9C9BB5B7582 /* Socks5Client */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		45B49DDF0C244C97C9E84E33 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				1BB274F148CF05EC73A6B1AA /* TunnelStats.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		4ED8FB6B253FEB66FEF7F7EB /* NetBridge */ = {
+			isa = PBXGroup;
+			children = (
+				D6FB87579519EAAFFB822179 /* ClientConfiguration.swift */,
+				F4DC5F4B5CD66ED8B3CDC597 /* ClientTunnelManager.swift */,
+				8E106111279077DFB5141AD8 /* KeychainStore.swift */,
+				6EE02AAD0CC48BA330958C97 /* Socks5ClientTestView.swift */,
+			);
+			path = NetBridge;
+			sourceTree = "<group>";
+		};
+		ABF1264943F37BEE8D024D41 = {
+			isa = PBXGroup;
+			children = (
+				4ED8FB6B253FEB66FEF7F7EB /* NetBridge */,
+				032BD1CCE910D4486C27A5A3 /* NetBridgeMac */,
+				BF6F6CF647C61BED273A6BCF /* NetBridgeTunnel */,
+				22D9657FE8D441AA7738ACFA /* Packages */,
+				FD0424E5FB3AE27BFC99EF82 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		BF6F6CF647C61BED273A6BCF /* NetBridgeTunnel */ = {
+			isa = PBXGroup;
+			children = (
+				3E147B3C95D1152DE3050810 /* PacketTunnelProvider.swift */,
+			);
+			path = NetBridgeTunnel;
+			sourceTree = "<group>";
+		};
+		FD0424E5FB3AE27BFC99EF82 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E11B9E65A22839AB6BADE3DC /* NetBridgeMac.app */,
+				72ACABC74E3490FBB9F8E1B0 /* NetBridgeMacTunnel.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8ED272D4EF5E70A1621357F6 /* NetBridgeMacTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7EF3C6F4FD0C0734EE79217A /* Build configuration list for PBXNativeTarget "NetBridgeMacTunnel" */;
+			buildPhases = (
+				7BEA6F1C993CC863EF2DA32C /* Sources */,
+				F0B5930A32DE1EC2566BB543 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NetBridgeMacTunnel;
+			packageProductDependencies = (
+				121FCF3B6933AD976FE6CA52 /* LWIPTunnelEngine */,
+			);
+			productName = NetBridgeMacTunnel;
+			productReference = 72ACABC74E3490FBB9F8E1B0 /* NetBridgeMacTunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A2CBFB62145C0924D3B81D50 /* NetBridgeMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 577607FFEFF2FF4019483425 /* Build configuration list for PBXNativeTarget "NetBridgeMac" */;
+			buildPhases = (
+				9142D3B09C5AA98EC33BA44C /* Sources */,
+				9C0BD76CCEB3DE61BB429647 /* Resources */,
+				F4956B11357B01B7949398B9 /* Frameworks */,
+				318952AEF4AD69690808C539 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E0FA7980B5FB3DCE99B542F1 /* PBXTargetDependency */,
+			);
+			name = NetBridgeMac;
+			packageProductDependencies = (
+				55A42C63A978291DDA697C7B /* Socks5Client */,
+			);
+			productName = NetBridgeMac;
+			productReference = E11B9E65A22839AB6BADE3DC /* NetBridgeMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FA8D15CD15CB0B831B28A954 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					8ED272D4EF5E70A1621357F6 = {
+						DevelopmentTeam = DS8AMC8BSV;
+						ProvisioningStyle = Automatic;
+					};
+					A2CBFB62145C0924D3B81D50 = {
+						DevelopmentTeam = DS8AMC8BSV;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = E5123DAB25F8254A66C615A8 /* Build configuration list for PBXProject "NetBridgeMac" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = ABF1264943F37BEE8D024D41;
+			packageReferences = (
+				F8893CE063A5E11774816E0B /* XCLocalSwiftPackageReference "LWIPTunnelEngine" */,
+				B2650601AD80127C7E8B69D9 /* XCLocalSwiftPackageReference "Socks5Client" */,
+			);
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A2CBFB62145C0924D3B81D50 /* NetBridgeMac */,
+				8ED272D4EF5E70A1621357F6 /* NetBridgeMacTunnel */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9C0BD76CCEB3DE61BB429647 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EFE990375B6C226117A2989B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7BEA6F1C993CC863EF2DA32C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EF04C0B3BE80978457BFF2F3 /* PacketTunnelProvider.swift in Sources */,
+				E705268FD1D7018EE3F85CAE /* TunnelStats.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9142D3B09C5AA98EC33BA44C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F7B358B548415083A3407C45 /* ClientConfiguration.swift in Sources */,
+				AD2410308315030FB7B0B7B8 /* ClientTunnelManager.swift in Sources */,
+				1E67A6346D39A9E819A9F0A9 /* KeychainStore.swift in Sources */,
+				3FBFE868B7921EF4E1A5919F /* MacClientModel.swift in Sources */,
+				9FA80F958432E6EE3F5A63DD /* MacClientView.swift in Sources */,
+				164B8E5F98CBBA50C88AD1E3 /* MacDashboardView.swift in Sources */,
+				87AAF16817ABE19CBFDCF141 /* MacMenuBarView.swift in Sources */,
+				4A7AE28C02D1B2567321459A /* MacQRScanner.swift in Sources */,
+				39FC8297DB96397C6F6E91C5 /* MacRootView.swift in Sources */,
+				720028FD989D4C8C15BF5B6A /* MacSettingsView.swift in Sources */,
+				CFA11EF4532658D2A333950E /* MacSupport.swift in Sources */,
+				39B6259FCBBA2DE8078EDEA7 /* NetBridgeMacApp.swift in Sources */,
+				CDC315B3B2FDD223BCF79598 /* QRSupport.swift in Sources */,
+				9B7041A2DAEEB541E07C0A81 /* Socks5ClientTestView.swift in Sources */,
+				D528BA317DA7CDE1129C171F /* TunnelStats.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E0FA7980B5FB3DCE99B542F1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8ED272D4EF5E70A1621357F6 /* NetBridgeMacTunnel */;
+			targetProxy = C523D77813CBBC36B7DCED8C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1F18A291C47960D7944D1249 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NetBridgeMacTunnel/NetBridgeMacTunnel.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NetBridgeMacTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy.Tunnel;
+				PRODUCT_MODULE_NAME = NetBridgeTunnel;
+				PRODUCT_NAME = NetBridgeTunnel;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		41770FD432409AD0892D362C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NetBridgeMacTunnel/NetBridgeMacTunnel.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NetBridgeMacTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy.Tunnel;
+				PRODUCT_MODULE_NAME = NetBridgeTunnel;
+				PRODUCT_NAME = NetBridgeTunnel;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		6B88A83B36A13471F44C75E2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = NetBridgeMac/NetBridgeMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NetBridgeMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy;
+				PRODUCT_MODULE_NAME = NetBridgeMac;
+				PRODUCT_NAME = NetBridge;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		811009A9B6F404D7473AA6DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = NetBridgeMac/NetBridgeMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NetBridgeMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.Korporate1k.LocalProxy;
+				PRODUCT_MODULE_NAME = NetBridgeMac;
+				PRODUCT_NAME = NetBridge;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		A7CBD722952F35499F534C5A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		EEB019B31085E05A4FF2CB10 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = DS8AMC8BSV;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		577607FFEFF2FF4019483425 /* Build configuration list for PBXNativeTarget "NetBridgeMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				811009A9B6F404D7473AA6DC /* Debug */,
+				6B88A83B36A13471F44C75E2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7EF3C6F4FD0C0734EE79217A /* Build configuration list for PBXNativeTarget "NetBridgeMacTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				41770FD432409AD0892D362C /* Debug */,
+				1F18A291C47960D7944D1249 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E5123DAB25F8254A66C615A8 /* Build configuration list for PBXProject "NetBridgeMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7CBD722952F35499F534C5A /* Debug */,
+				EEB019B31085E05A4FF2CB10 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B2650601AD80127C7E8B69D9 /* XCLocalSwiftPackageReference "Socks5Client" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Socks5Client;
+		};
+		F8893CE063A5E11774816E0B /* XCLocalSwiftPackageReference "LWIPTunnelEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LWIPTunnelEngine;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		121FCF3B6933AD976FE6CA52 /* LWIPTunnelEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LWIPTunnelEngine;
+		};
+		55A42C63A978291DDA697C7B /* Socks5Client */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Socks5Client;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = FA8D15CD15CB0B831B28A954 /* Project object */;
+}

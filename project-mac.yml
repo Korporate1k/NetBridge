@@ -1,7 +1,7 @@
-# XcodeGen spec for the macOS client. Generates LocalProxyMac.xcodeproj, kept
-# separate from the hand-edited iOS LocalProxy.xcodeproj so the iOS project is
+# XcodeGen spec for the macOS client. Generates NetBridgeMac.xcodeproj, kept
+# separate from the hand-edited iOS NetBridge.xcodeproj so the iOS project is
 # never touched:  xcodegen generate --spec project-mac.yml
-name: LocalProxyMac
+name: NetBridgeMac
 
 options:
   bundleIdPrefix: com.Korporate1k
@@ -29,32 +29,32 @@ packages:
     path: Socks5Client
 
 targets:
-  LocalProxyMac:
+  NetBridgeMac:
     type: application
     platform: macOS
     sources:
-      - path: LocalProxyMac/Sources
-      - path: LocalProxyMac/Shared
-      - path: LocalProxyMac/Assets.xcassets
+      - path: NetBridgeMac/Sources
+      - path: NetBridgeMac/Shared
+      - path: NetBridgeMac/Assets.xcassets
       # Shared with the iOS app, compiled unchanged (macOS-only bits are #if guarded).
-      - path: LocalProxy/ClientConfiguration.swift
-      - path: LocalProxy/KeychainStore.swift
-      - path: LocalProxy/ClientTunnelManager.swift
-      - path: LocalProxy/Socks5ClientTestView.swift
+      - path: NetBridge/ClientConfiguration.swift
+      - path: NetBridge/KeychainStore.swift
+      - path: NetBridge/ClientTunnelManager.swift
+      - path: NetBridge/Socks5ClientTestView.swift
     dependencies:
-      - target: LocalProxyMacTunnel
+      - target: NetBridgeMacTunnel
         embed: true
       - package: Socks5Client
         product: Socks5Client
     settings:
       base:
         PRODUCT_NAME: NetBridge
-        PRODUCT_MODULE_NAME: LocalProxyMac
+        PRODUCT_MODULE_NAME: NetBridgeMac
         PRODUCT_BUNDLE_IDENTIFIER: com.Korporate1k.LocalProxy
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
     info:
-      path: LocalProxyMac/Info.plist
+      path: NetBridgeMac/Info.plist
       properties:
         CFBundleDisplayName: NetBridge
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -63,7 +63,7 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         NSCameraUsageDescription: NetBridge uses the camera to scan another device's QR code.
     entitlements:
-      path: LocalProxyMac/LocalProxyMac.entitlements
+      path: NetBridgeMac/NetBridgeMac.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.device.camera: true
@@ -75,25 +75,25 @@ targets:
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.Korporate1k.LocalProxy.shared
 
-  LocalProxyMacTunnel:
+  NetBridgeMacTunnel:
     type: app-extension
     platform: macOS
     sources:
-      - path: LocalProxyTunnel/PacketTunnelProvider.swift
-      - path: LocalProxyMac/Shared
+      - path: NetBridgeTunnel/PacketTunnelProvider.swift
+      - path: NetBridgeMac/Shared
     dependencies:
       - package: LWIPTunnelEngine
         product: LWIPTunnelEngine
     settings:
       base:
-        PRODUCT_NAME: LocalProxyTunnel
-        PRODUCT_MODULE_NAME: LocalProxyTunnel
+        PRODUCT_NAME: NetBridgeTunnel
+        PRODUCT_MODULE_NAME: NetBridgeTunnel
         PRODUCT_BUNDLE_IDENTIFIER: com.Korporate1k.LocalProxy.Tunnel
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         GENERATE_INFOPLIST_FILE: NO
     info:
-      path: LocalProxyMacTunnel/Info.plist
+      path: NetBridgeMacTunnel/Info.plist
       properties:
         CFBundleDisplayName: NetBridge Tunnel
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -102,7 +102,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
     entitlements:
-      path: LocalProxyMacTunnel/LocalProxyMacTunnel.entitlements
+      path: NetBridgeMacTunnel/NetBridgeMacTunnel.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
@@ -115,11 +115,11 @@ targets:
           - $(AppIdentifierPrefix)com.Korporate1k.LocalProxy.shared
 
 schemes:
-  LocalProxyMac:
+  NetBridgeMac:
     build:
       targets:
-        LocalProxyMac: all
-        LocalProxyMacTunnel: all
+        NetBridgeMac: all
+        NetBridgeMacTunnel: all
     run:
       config: Debug
     archive:

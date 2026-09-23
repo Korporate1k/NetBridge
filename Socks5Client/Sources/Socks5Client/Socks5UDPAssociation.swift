@@ -24,7 +24,7 @@ public final class Socks5UDPAssociation {
 
     /// Serialized sends on the one UDP connection this association owns —
     /// firing `NWConnection.send()` calls back-to-back before earlier ones
-    /// complete does not queue reliably (the same issue LocalProxy's own
+    /// complete does not queue reliably (the same issue NetBridge's own
     /// server-side `UDPRelay` documents and works around), so sends here are
     /// queued and drained one at a time.
     private var pendingSends: [(Data, (Socks5ClientError?) -> Void)] = []

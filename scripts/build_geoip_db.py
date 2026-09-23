@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Converts a DB-IP Lite City IPv4 CSV (the "-num" variant, where
 ip_range_start/ip_range_end are plain integers) into the compact binary
-format LocalProxy/GeoIPLookup.swift reads directly from the app bundle.
+format NetBridge/GeoIPLookup.swift reads directly from the app bundle.
 
 Source data: https://github.com/sapics/ip-location-db (dbip-city, CC BY 4.0
-by DB-IP.com — see LocalProxy/Resources/GEOIP-ATTRIBUTION.md). This script is
+by DB-IP.com — see NetBridge/Resources/GEOIP-ATTRIBUTION.md). This script is
 a maintenance tool, run manually/periodically — it is NOT part of the Xcode
 build, which stays network-free.
 
 Usage:
     curl -L -o dbip-city-ipv4-num.csv.gz \\
         https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv4-num.csv.gz
-    python3 scripts/build_geoip_db.py dbip-city-ipv4-num.csv.gz LocalProxy/Resources/GeoIPv4.bin
+    python3 scripts/build_geoip_db.py dbip-city-ipv4-num.csv.gz NetBridge/Resources/GeoIPv4.bin
 
 Output format (all multi-byte integers big-endian):
     header:  recordCount: UInt32 | cityTableOffset: UInt32 (from file start)

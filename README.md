@@ -1,4 +1,4 @@
-# LocalProxy
+# NetBridge
 
 An iOS app that runs a local **HTTP CONNECT + SOCKS5 (TCP and UDP ASSOCIATE)
 proxy** on your iPhone, so another device on the same network (Wi-Fi, Personal
@@ -18,13 +18,13 @@ SOCKS5-capable client at the phone's address and port.
 
 ## Build
 
-1. Open `LocalProxy.xcodeproj` in Xcode.
+1. Open `NetBridge.xcodeproj` in Xcode.
 2. Select your device, set your team under Signing & Capabilities if needed.
 3. Run.
 
 ## Using it
 
-1. Launch LocalProxy and tap **Start Proxy**. The dashboard shows the
+1. Launch NetBridge and tap **Start Proxy**. The dashboard shows the
    phone's current local IPv4 address and port.
 2. On the other device, join the same network as the phone and set its HTTP
    or SOCKS5 proxy setting to that address and port.

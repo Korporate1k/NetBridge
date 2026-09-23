@@ -9,7 +9,7 @@
  * network settings are fixed by NEPacketTunnelNetworkSettings on the Swift
  * side; on-device DNS queries arrive as ordinary UDP packets to whatever
  * server was configured and get relayed like any other UDP flow), no
- * sockets/netconn API (LocalProxyTunnel drives the raw tcp and udp PCB API
+ * sockets/netconn API (NetBridgeTunnel drives the raw tcp and udp PCB API
  * directly for tun2socks-style flow interception).
  */
 

@@ -1,4 +1,4 @@
-# Simulator quick reference — LocalProxy
+# Simulator quick reference — NetBridge
 
 Consolidated so "which simulator, what's its ID, how do I drive it" doesn't
 need rediscovering each session. Bundle ID throughout: `com.Korporate1k.LocalProxy`
@@ -23,11 +23,11 @@ view, open `/Applications/Xcode.app/Contents/Applications/DeviceHub.app`.
 
 ```bash
 DEV=C61D09FC-8D16-4250-9F98-6D4D6113630F
-cd /Users/matthew/Desktop/LocalProxy
-xcodebuild -project LocalProxy.xcodeproj -scheme LocalProxy \
+cd /Users/matthew/Desktop/NetBridge
+xcodebuild -project NetBridge.xcodeproj -scheme NetBridge \
   -destination "id=$DEV" -configuration Debug build
 
-APP=$(find /Users/matthew/Library/Developer/Xcode/DerivedData/LocalProxy-*/Build/Products/Debug-iphonesimulator/LocalProxy.app -maxdepth 0 | head -1)
+APP=$(find /Users/matthew/Library/Developer/Xcode/DerivedData/NetBridge-*/Build/Products/Debug-iphonesimulator/NetBridge.app -maxdepth 0 | head -1)
 xcrun simctl install $DEV "$APP"
 xcrun simctl launch $DEV com.Korporate1k.LocalProxy
 ```
@@ -81,8 +81,8 @@ of preference:
 ## Real device signing (as of 2026-09-16)
 
 A real Apple Developer Team (`DS8AMC8BSV`) is now configured
-(`DEVELOPMENT_TEAM` in `project.pbxproj`, both the `LocalProxy` and
-`LocalProxyTunnel` targets). `xcodebuild ... -sdk iphoneos -allowProvisioningUpdates`
+(`DEVELOPMENT_TEAM` in `project.pbxproj`, both the `NetBridge` and
+`NetBridgeTunnel` targets). `xcodebuild ... -sdk iphoneos -allowProvisioningUpdates`
 successfully auto-fetches real provisioning profiles for both targets — but
 the actual `codesign` step fails with `errSecInternalComponent` from this
 automated shell every time, regardless of a fresh keychain/fresh cert
@@ -91,5 +91,5 @@ troubleshooting log). This looks like a deliberate limitation of running
 headless (no GUI session to answer the one-time "codesign wants to use a
 key in your keychain" prompt a new private key requires), not a fixable
 config issue. **Don't spend time re-litigating this from a shell** — if a
-real signed device/archive build is needed, open `LocalProxy.xcodeproj` in
+real signed device/archive build is needed, open `NetBridge.xcodeproj` in
 Xcode.app itself and Run/Archive from there; the project is fully ready.

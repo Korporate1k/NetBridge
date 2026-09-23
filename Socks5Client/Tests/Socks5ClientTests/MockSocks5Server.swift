@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 /// A minimal hand-rolled SOCKS5 server used only by this test target — not
-/// a reuse of LocalProxy's own app-target server code (an SPM test target
+/// a reuse of NetBridge's own app-target server code (an SPM test target
 /// can't depend on an Xcode app target), and deliberately simple: no-auth
 /// only, echoes CONNECT traffic back, echoes UDP ASSOCIATE datagrams back.
 /// Configurable failure modes let tests exercise each client-side error path.
