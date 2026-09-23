@@ -150,7 +150,7 @@ struct SettingsView: View {
             ValueLink("DNS", value: dohEnabled ? "DoH" : "System") {
                 DNSSettingsView()
             }
-            ValueLink("Traffic Pacing", value: antiDPIValue) {
+            ValueLink("DPI Settings", value: antiDPIValue) {
                 AntiDPISettingsView()
             }
             Toggle("Bind to VPN", isOn: $bindVPN)
@@ -299,7 +299,7 @@ private struct AntiDPISettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Traffic Pacing", isOn: $antiDPIEnabled)
+                Toggle("DPI Settings", isOn: $antiDPIEnabled)
                 Picker("Tuning", selection: $antiDPITuning) {
                     ForEach(AntiDPITuning.allCases) { option in Text(option.label).tag(option.rawValue) }
                 }
@@ -308,7 +308,7 @@ private struct AntiDPISettingsView: View {
                 Text("Sends outgoing data in smaller, evenly spaced pieces. Light keeps most of your speed; Aggressive lowers throughput further.")
             }
         }
-        .navigationTitle("Traffic Pacing")
+        .navigationTitle("DPI Settings")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
