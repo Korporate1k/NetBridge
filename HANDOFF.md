@@ -2466,3 +2466,7 @@ Still open:
 
 Everything from the two sections above is committed as f04f48a on `feature/macos-client`: the cap fix, the lost-transfer-tail fix and the IPv6 bypass fix. `CURRENT_PROJECT_VERSION` 4 → 5 in all four settings is committed on its own as b0135f0, with no command-line override. Archived from a clean tree:
 `~/Library/Developer/Xcode/Archives/2026-09-24/NetBridge 9-24-26, 12.39 PM build 5.xcarchive`, NetBridge 1.0 build **5** on both the app and the tunnel extension (Release, team DS8AMC8BSV; Organizer → Distribute App re-signs for distribution). The release binary has no QA hooks. NOT uploaded. Next iOS TestFlight build = 6. The Mac build train is unchanged (next Mac build = 2).
+
+## 2026-09-24: correction, the next build is still 5
+
+Build 5 is archived but NOT uploaded, so 5 is still the build to ship. It is not 6, as the section above says. Re-archive at 5 as needed, and bump to 6 only after build 5 is uploaded to TestFlight. The project file stays at `CURRENT_PROJECT_VERSION = 5` (all four).
