@@ -133,7 +133,7 @@
 
   <div id="app" style="display:none">
     <h1>NetBridge Fleet Admin</h1>
-    <p class="subtitle">Editing <a href="https://gist.github.com/Korporate1k/92817bcaa07f1fb621a903919d1574a9" target="_blank">the live remote config Gist</a> — changes take effect on every app's next launch, no update needed.</p>
+    <p class="subtitle">Editing <a href="https://gist.github.com/Korporate1k/92817bcaa07f1fb621a903919d1574a9" target="_blank">the live remote config Gist</a> — running apps pick up changes within about 10 seconds, no update needed.</p>
 
     <div id="status"></div>
 
@@ -152,7 +152,11 @@
       <h2>Monetization</h2>
       <div class="row"><label>Paywall Enabled</label><input type="checkbox" id="paywallEnabled"></div>
       <div class="row"><label>Daily Free Cap (GB)</label><input type="number" id="dailyCapGB" step="0.1" min="0"></div>
-      <div class="row"><label>Bandwidth Presets (Mbps)<span class="hint">Comma-separated, e.g. 1, 5, 10</span></label><input type="text" id="bandwidthPresetsMbps"></div>
+    </div>
+
+    <div class="card">
+      <h2>Device Limits</h2>
+      <div class="row"><label>Bandwidth Presets (Mbps)<span class="hint">Comma-separated whole numbers, 1–10000, e.g. 1, 5, 10. Speed-limit options in each device's settings — free, not a paid feature</span></label><input type="text" id="bandwidthPresetsMbps"></div>
     </div>
 
     <div class="card">
@@ -225,6 +229,11 @@ const BOOL_FIELDS = ["relayEnabled","autoRestartEnabled","doHEnabled","backgroun
 const NUMBER_FIELDS = ["dailyCapGB","trialDurationHours","bonusDays","maxRestartAttempts","restartWindowSeconds",
   "maxConcurrentTunnels","outboundRetryAttempts","outboundRetryBaseSeconds","doHTimeoutSeconds",
   "connectionHistoryLimit","usageHistoryCapacity"];
+// Decoded as Int by the app — written as whole, non-negative numbers.
+const INT_FIELDS = new Set(["trialDurationHours","bonusDays","maxRestartAttempts","maxConcurrentTunnels",
+  "outboundRetryAttempts","connectionHistoryLimit","usageHistoryCapacity"]);
+// Same range the app accepts for a bandwidth limit.
+const MAX_PRESET_MBPS = 10000;
 const STRING_FIELDS = ["campaignID","doHDefaultUpstreamURL","minSupportedVersion","announcementMessage"];
 
 function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
@@ -297,11 +306,13 @@ function readForm() {
   for (const key of NUMBER_FIELDS) {
     const raw = document.getElementById(key).value;
     const n = raw === "" ? 0 : Number(raw);
-    config[key] = Number.isFinite(n) ? n : 0;
+    const finite = Number.isFinite(n) ? Math.max(0, n) : 0;
+    config[key] = INT_FIELDS.has(key) ? Math.trunc(finite) : finite;
   }
   for (const key of STRING_FIELDS) config[key] = document.getElementById(key).value;
-  config.bandwidthPresetsMbps = document.getElementById("bandwidthPresetsMbps").value
-    .split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+  config.bandwidthPresetsMbps = [...new Set(document.getElementById("bandwidthPresetsMbps").value
+    .split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0 && n <= MAX_PRESET_MBPS))]
+    .sort((a, b) => a - b);
   config.trialEndDate = document.getElementById("trialEndDate").value || "";
   return config;
 }
@@ -321,7 +332,7 @@ async function saveConfig() {
       body: JSON.stringify({ files: { [FILENAME]: { content: JSON.stringify(config, null, 2) } } })
     });
     if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
-    showStatus("Saved — every app picks this up on its next launch.", "success");
+    showStatus("Saved — running apps pick this up within about 10 seconds.", "success");
   } catch (err) {
     showStatus(`Failed to save: ${err.message}`, "error");
   } finally {

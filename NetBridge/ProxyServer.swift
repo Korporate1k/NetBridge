@@ -298,7 +298,16 @@ final class ProxyServer: ObservableObject {
             // pinned false, `.responsiveData` service class) to inbound
             // accepted connections that `DirectTCPTransport` applies to
             // outbound dials, so both legs of a relayed connection match.
-            let listener = try NWListener(using: .tunedTCP(), on: listenPort)
+            //
+            // IPv4 only. Per-device caps and blocks are keyed by source IP
+            // (`DeviceRegistry.deviceKey`), and a client that also reached us
+            // over native IPv6 would land under a second, uncapped key. Every
+            // address we advertise is IPv4, so nothing legitimate uses v6.
+            let parameters = NWParameters.tunedTCP()
+            if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+                ip.version = .v4
+            }
+            let listener = try NWListener(using: parameters, on: listenPort)
             listener.newConnectionHandler = { [weak self] connection in
                 self?.accept(connection, mode: mode)
             }
@@ -411,8 +420,7 @@ final class ProxyServer: ObservableObject {
         nextTunnelID += 1
         let id = nextTunnelID
         let tunnelQueue = DispatchQueue(label: "localproxy.tunnel.\(id)", qos: .userInitiated)
-        let deviceStats = devices.stats(forDevice: deviceKey, parent: stats)
-        let rateLimiter = devices.rateLimiter(forDevice: deviceKey)
+        let (deviceStats, rateLimiter) = devices.attach(forDevice: deviceKey, parent: stats)
         let credentials: (username: String, password: String)? =
             (requiredUsername.isEmpty || requiredPassword.isEmpty) ? nil : (requiredUsername, requiredPassword)
         let tunnel = Tunnel(id: id, client: connection, queue: tunnelQueue, stats: deviceStats,

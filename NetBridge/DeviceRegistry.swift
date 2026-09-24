@@ -64,9 +64,11 @@ final class DeviceRegistry: ObservableObject {
         var rateDown: Double = 0
         var isBlocked: Bool = false
         var capBytesPerSecond: UInt64? {
-            didSet { rateLimiter?.updateRate(bytesPerSecond: capBytesPerSecond ?? 0) }
+            didSet { rateLimiter.updateRate(bytesPerSecond: capBytesPerSecond ?? 0) }
         }
-        var rateLimiter: RateLimiter?
+        /// Lives as long as the entry (rate 0 = unlimited) so every tunnel
+        /// from this device shares it and cap changes reach open tunnels.
+        let rateLimiter = RateLimiter()
 
         init(record: Record) {
             ip = record.ip
@@ -80,6 +82,8 @@ final class DeviceRegistry: ObservableObject {
             prevDown = record.bytesDown
             isBlocked = record.isBlocked
             capBytesPerSecond = record.capBytesPerSecond
+            // didSet doesn't run during init.
+            rateLimiter.updateRate(bytesPerSecond: record.capBytesPerSecond ?? 0)
         }
 
         init(ip: String, now: Date) {
@@ -156,13 +160,24 @@ final class DeviceRegistry: ObservableObject {
         case .name(let name, _): text = name
         @unknown default: text = "\(host)"
         }
-        return text.split(separator: "%", maxSplits: 1).first.map(String.init) ?? text
+        let unscoped = text.split(separator: "%", maxSplits: 1).first.map(String.init) ?? text
+        // An IPv4 client seen through a dual-stack socket is the same device
+        // as its plain IPv4 form — key both the same so they share one cap.
+        let mappedPrefix = "::ffff:"
+        if unscoped.lowercased().hasPrefix(mappedPrefix) {
+            let v4 = String(unscoped.dropFirst(mappedPrefix.count))
+            if IPv4Address(v4) != nil { return v4 }
+        }
+        return unscoped
     }
 
     // MARK: - Relay-side hooks
 
-    /// The counters a new tunnel from `ip` should use. Created once per device per launch.
-    func stats(forDevice ip: String, parent: ProxyStats) -> ProxyStats {
+    /// The counters and the rate limiter a new tunnel from `ip` should use,
+    /// fetched under one lock so a concurrent `forget` can't split them.
+    /// Counters are created once per device per launch; the limiter lives as
+    /// long as the device's entry.
+    func attach(forDevice ip: String, parent: ProxyStats) -> (stats: ProxyStats, rateLimiter: RateLimiter) {
         lock.lock(); defer { lock.unlock() }
         let now = Date()
         let entry: Entry
@@ -174,29 +189,18 @@ final class DeviceRegistry: ObservableObject {
         }
         entry.lastSeen = now
         dirty = true
-        if let live = entry.live { return live }
+        if let live = entry.live { return (live, entry.rateLimiter) }
         let live = ProxyStats(parent: parent)
         entry.live = live
-        return live
+        return (live, entry.rateLimiter)
     }
 
     /// Whether new connections from `ip` should be refused outright. Reads
     /// only — an IP that's never been seen can't have been blocked, so this
-    /// never creates an entry (unlike `stats(forDevice:parent:)`).
+    /// never creates an entry (unlike `attach(forDevice:parent:)`).
     func isBlocked(_ ip: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
         return entries[ip]?.isBlocked ?? false
-    }
-
-    /// The rate limiter for `ip`, if a cap is set — call after
-    /// `stats(forDevice:parent:)` so the entry already exists.
-    func rateLimiter(forDevice ip: String) -> RateLimiter? {
-        lock.lock(); defer { lock.unlock() }
-        guard let entry = entries[ip], let cap = entry.capBytesPerSecond else { return nil }
-        if entry.rateLimiter == nil {
-            entry.rateLimiter = RateLimiter(bytesPerSecond: cap)
-        }
-        return entry.rateLimiter
     }
 
     func setBlocked(_ ip: String, blocked: Bool) {
@@ -209,8 +213,8 @@ final class DeviceRegistry: ObservableObject {
 
     func setCap(_ ip: String, bytesPerSecond: UInt64?) {
         lock.lock()
-        entries[ip]?.capBytesPerSecond = bytesPerSecond
-        if bytesPerSecond == nil { entries[ip]?.rateLimiter = nil }
+        // A cap of 0 would read as "capped" in the UI while limiting nothing.
+        entries[ip]?.capBytesPerSecond = (bytesPerSecond ?? 0) > 0 ? bytesPerSecond : nil
         lock.unlock()
         publish()
         save()
@@ -261,7 +265,8 @@ final class DeviceRegistry: ObservableObject {
 
     func forget(_ ip: String) {
         lock.lock()
-        entries.removeValue(forKey: ip)
+        // Tunnels still open keep this limiter — lift the cap on them too.
+        entries.removeValue(forKey: ip)?.rateLimiter.updateRate(bytesPerSecond: 0)
         lock.unlock()
         publish()
         save()

@@ -200,10 +200,11 @@ struct UploadThroughputTestView: View {
         // trusts only these two computed values, never the raw text fields.
         let byteCap = UInt64(min(requestedMB, Caps.hardCeilingMB)) * 1_000_000
         let durationCap = min(TimeInterval(requestedSeconds), Caps.maxDurationSeconds)
-        let rateLimitMbps = Double(rateLimitMbpsText)
-        let limiter: RateLimiter? = rateLimitMbps.map { mbps in
-            RateLimiter(bytesPerSecond: UInt64(max(1, mbps * 1_000_000 / 8)))
-        }
+        // Same accepted range as a device cap; out-of-range or non-finite
+        // text (e.g. pasted "inf") means no limit instead of trapping.
+        let limiter: RateLimiter? = Double(rateLimitMbpsText)
+            .flatMap { BandwidthPreset.bytesPerSecond(mbps: $0) }
+            .map { RateLimiter(bytesPerSecond: $0) }
 
         let proto = selectedProtocol
         let host = destinationHost
@@ -257,7 +258,7 @@ struct UploadThroughputTestView: View {
             }
         }
 
-        DebugLog.important("uploadtest", "starting: \(host):\(destPort) proto=\(proto.rawValue) byteCap=\(byteCap) durationCap=\(durationCap)s rateLimitMbps=\(rateLimitMbps.map { String($0) } ?? "unlimited")")
+        DebugLog.important("uploadtest", "starting: \(host):\(destPort) proto=\(proto.rawValue) byteCap=\(byteCap) durationCap=\(durationCap)s rateLimitMbps=\(limiter == nil ? "unlimited" : rateLimitMbpsText)")
 
         // Backstop: guarantees the test can never hang indefinitely even if
         // the peer stops reading and every completion handler stalls.

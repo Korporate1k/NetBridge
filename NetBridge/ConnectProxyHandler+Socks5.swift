@@ -161,7 +161,9 @@ extension Tunnel {
     private func startUDPAssociate() {
         let advertised = LocalAddress.localAddress(of: client)
         DebugLog.important("client", tunnel: id, "SOCKS5 UDP ASSOCIATE will advertise \(advertised ?? "primary interface (control-connection address unavailable)")")
-        let relay = UDPRelay(id: id, queue: queue, stats: stats, advertisedHost: advertised)
+        let relay = UDPRelay(id: id, queue: queue, stats: stats, rateLimiter: rateLimiter,
+                             expectedClientKey: DeviceRegistry.deviceKey(for: client.endpoint),
+                             advertisedHost: advertised)
         udpRelay = relay
         relay.start { [weak self] host, port in
             guard let self = self else { return }

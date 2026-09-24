@@ -28,6 +28,13 @@ final class UDPRelay {
     let id: Int
     private let queue: DispatchQueue
     private let stats: ProxyStats
+    /// The owning device's shared limiter (rate 0 = unlimited). Datagrams
+    /// over the cap are dropped rather than queued — see `RateLimiter.admit`.
+    private let rateLimiter: RateLimiter
+    /// `DeviceRegistry.deviceKey` of the SOCKS5 control connection; only a
+    /// UDP sender from that same device may bind this association, so one
+    /// device can't relay (and bill/cap) its UDP through another's.
+    private let expectedClientKey: String?
 
     private var listener: NWListener?
     private var clientConnection: NWConnection?
@@ -76,6 +83,7 @@ final class UDPRelay {
     private var datagramsDown = 0
     private var sendDrops = 0
     private var noClientDrops = 0
+    private var capDrops = 0
     private var beatBytesUp: UInt64 = 0
     private var beatBytesDown: UInt64 = 0
     private var lastDataAt = DispatchTime.now()
@@ -90,10 +98,13 @@ final class UDPRelay {
     /// which on a phone with cellular + a hotspot is not the hotspot address.
     private let advertisedHost: String?
 
-    init(id: Int, queue: DispatchQueue, stats: ProxyStats, advertisedHost: String? = nil) {
+    init(id: Int, queue: DispatchQueue, stats: ProxyStats, rateLimiter: RateLimiter = RateLimiter(),
+         expectedClientKey: String? = nil, advertisedHost: String? = nil) {
         self.id = id
         self.queue = queue
         self.stats = stats
+        self.rateLimiter = rateLimiter
+        self.expectedClientKey = expectedClientKey
         self.advertisedHost = advertisedHost
     }
 
@@ -140,6 +151,11 @@ final class UDPRelay {
             connection.cancel()
             return
         }
+        if let expected = expectedClientKey, DeviceRegistry.deviceKey(for: connection.endpoint) != expected {
+            DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay ignoring sender \(EndpointDescription.describe(connection.endpoint)) — not the control connection's device \(expected)")
+            connection.cancel()
+            return
+        }
         DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay client bound to \(EndpointDescription.describe(connection.endpoint))")
         clientConnection = connection
         connection.stateUpdateHandler = { [weak self] state in
@@ -181,7 +197,11 @@ final class UDPRelay {
             case .invalid:
                 DebugLog.debug("udp", tunnel: self.id, "dropped unparseable UDP datagram from client, \(data.count) bytes")
             case .parsed(let host, let port, let payload):
-                self.relay(payload: payload, to: host, port: port)
+                if self.rateLimiter.admit(payload.count) {
+                    self.relay(payload: payload, to: host, port: port)
+                } else {
+                    self.capDrops += 1
+                }
             }
             self.receiveFromClient(connection)
         }
@@ -311,6 +331,10 @@ final class UDPRelay {
             DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE reply from \(host):\(port) (\(data.count)B) arrived before the client was bound — dropped")
             return
         }
+        guard rateLimiter.admit(data.count) else {
+            capDrops += 1
+            return
+        }
         stats.addBytesDown(data.count)
         bytesDown += UInt64(data.count)
         datagramsDown += 1
@@ -359,7 +383,7 @@ final class UDPRelay {
             self.beatBytesDown = self.bytesDown
             let idleMs = Double(DispatchTime.now().uptimeNanoseconds - self.lastDataAt.uptimeNanoseconds) / 1_000_000
             let pending = self.pendingSends.values.reduce(0) { $0 + $1.count }
-            DebugLog.debug("udp", tunnel: self.id, "heartbeat +up=\(deltaUp)B/s +down=\(deltaDown)B/s total up=\(self.bytesUp) down=\(self.bytesDown) datagrams up=\(self.datagramsUp) down=\(self.datagramsDown) destinations=\(self.destinationsSeen.count) sendDrops=\(self.sendDrops) pendingSends=\(pending) sendsInFlight=\(self.sendInFlight.count) idle=\(String(format: "%.0f", idleMs))ms")
+            DebugLog.debug("udp", tunnel: self.id, "heartbeat +up=\(deltaUp)B/s +down=\(deltaDown)B/s total up=\(self.bytesUp) down=\(self.bytesDown) datagrams up=\(self.datagramsUp) down=\(self.datagramsDown) destinations=\(self.destinationsSeen.count) sendDrops=\(self.sendDrops) capDrops=\(self.capDrops) pendingSends=\(pending) sendsInFlight=\(self.sendInFlight.count) idle=\(String(format: "%.0f", idleMs))ms")
             if idleMs > Self.stallThresholdMs && !self.stalled {
                 self.stalled = true
                 DebugLog.important("udp", tunnel: self.id, "STALL no datagrams either direction for \(String(format: "%.0f", idleMs))ms destinations=\(self.destinationsSeen.count) pendingSends=\(pending)")
@@ -379,7 +403,7 @@ final class UDPRelay {
         cancelled = true
         heartbeat?.cancel()
         heartbeat = nil
-        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay closed, \(destinationsSeen.count) destination(s) up=\(bytesUp)B/\(datagramsUp)dgrams down=\(bytesDown)B/\(datagramsDown)dgrams sendDrops=\(sendDrops) noClientDrops=\(noClientDrops)")
+        DebugLog.important("udp", tunnel: id, "UDP ASSOCIATE relay closed, \(destinationsSeen.count) destination(s) up=\(bytesUp)B/\(datagramsUp)dgrams down=\(bytesDown)B/\(datagramsDown)dgrams sendDrops=\(sendDrops) noClientDrops=\(noClientDrops) capDrops=\(capDrops)")
         if let report = clientTransferReport {
             let tunnelID = id
             report.collect(queue: queue) { report in

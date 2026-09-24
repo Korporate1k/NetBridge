@@ -91,7 +91,8 @@ struct DashboardView: View {
                         .tabItem { Label("Client", systemImage: "network") }
                         .tag(1)
 
-                    DevicesView(registry: server.devices, history: server.history)
+                    DevicesView(registry: server.devices, history: server.history,
+                                showControls: remoteConfig.showDeviceBandwidthControls)
                         .tabItem { Label("Devices", systemImage: "laptopcomputer.and.iphone") }
                         .tag(2)
 

@@ -53,7 +53,9 @@ final class Tunnel {
     let stats: ProxyStats
     let transport: DirectTCPTransport
     private let forcedProtocol: ListenerMode
-    let rateLimiter: RateLimiter?
+    /// The device's shared limiter (rate 0 = unlimited). Checked per chunk,
+    /// so a cap set or lifted while this tunnel is open applies right away.
+    let rateLimiter: RateLimiter
     /// Opt-in RFC 1929 credential requirement for this connection's SOCKS5
     /// greeting — `nil` (the default) means no-auth only, identical to this
     /// project's original behavior. Set from `ProxyServer.requiredUsername`/
@@ -79,6 +81,9 @@ final class Tunnel {
     var cleanedUp = false
     var clientFinished = false
     var serverFinished = false
+    /// A side's FIN has been read — it has sent everything it will send.
+    var serverSentFin = false
+    var clientSentFin = false
 
     // MARK: Diagnostics state (all mutated on `queue`)
 
@@ -124,7 +129,7 @@ final class Tunnel {
     static let stallThresholdMs = 2000.0
 
     init(id: Int, client: NWConnection, queue: DispatchQueue, stats: ProxyStats, transport: DirectTCPTransport,
-         forcedProtocol: ListenerMode = .auto, rateLimiter: RateLimiter? = nil,
+         forcedProtocol: ListenerMode = .auto, rateLimiter: RateLimiter = RateLimiter(),
          retryAttempts: Int = 3, retryBaseSeconds: Double = 1,
          requiredCredentials: (username: String, password: String)? = nil) {
         self.id = id
@@ -155,7 +160,24 @@ final class Tunnel {
                 DebugLog.important("client", tunnel: self.id, "state WAITING \(ErrorDescription.describe(error))")
             case .failed(let error):
                 DebugLog.important("client", tunnel: self.id, "state FAILED \(ErrorDescription.describe(error)) \(self.progressText())")
-                self.cleanup(.clientFailed(ErrorDescription.describe(error)))
+                if self.clientSentFin && self.didOpen {
+                    // Mirror of the server-side case in connectOutbound: the
+                    // client already sent everything, so let its upload's tail
+                    // reach the server; nothing more can go downstream.
+                    self.serverFinished = true
+                    self.finishIfBothClosed()
+                } else if self.serverFinished && self.didOpen {
+                    // Mirror of the server-side case: we already half-closed
+                    // toward the client, so this can fire while its last
+                    // upload bytes are still unread — keep reading them.
+                    DebugLog.important("client", tunnel: self.id, "client failed after our FIN — reading its remaining data before close")
+                    let errorText = ErrorDescription.describe(error)
+                    self.queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+                        self?.cleanup(.clientFailed(errorText))
+                    }
+                } else {
+                    self.cleanup(.clientFailed(ErrorDescription.describe(error)))
+                }
             case .cancelled:
                 DebugLog.debug("client", tunnel: self.id, "state cancelled")
                 self.cleanup(.clientCancelled)

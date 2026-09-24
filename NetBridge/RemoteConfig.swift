@@ -179,28 +179,28 @@ struct RemotePromoConfig: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = RemotePromoConfig() // defaults source
         relayEnabled = try c.decodeIfPresent(Bool.self, forKey: .relayEnabled) ?? d.relayEnabled
-        paywallEnabled = try c.decode(Bool.self, forKey: .paywallEnabled)
+        paywallEnabled = try c.decodeIfPresent(Bool.self, forKey: .paywallEnabled) ?? d.paywallEnabled
         dailyCapGB = try c.decodeIfPresent(Double.self, forKey: .dailyCapGB) ?? d.dailyCapGB
-        bandwidthPresetsMbps = try c.decodeIfPresent([Int].self, forKey: .bandwidthPresetsMbps) ?? d.bandwidthPresetsMbps
+        bandwidthPresetsMbps = c.decodeLenientIntArray(forKey: .bandwidthPresetsMbps) ?? d.bandwidthPresetsMbps
         trialEnabled = try c.decodeIfPresent(Bool.self, forKey: .trialEnabled) ?? d.trialEnabled
-        trialDurationHours = try c.decodeIfPresent(Int.self, forKey: .trialDurationHours) ?? d.trialDurationHours
+        trialDurationHours = c.decodeLenientInt(forKey: .trialDurationHours) ?? d.trialDurationHours
         trialEndDate = try c.decodeIfPresent(String.self, forKey: .trialEndDate) ?? d.trialEndDate
         trialForceEndAll = try c.decodeIfPresent(Bool.self, forKey: .trialForceEndAll) ?? d.trialForceEndAll
-        bonusActive = try c.decode(Bool.self, forKey: .bonusActive)
-        bonusDays = try c.decode(Int.self, forKey: .bonusDays)
-        campaignID = try c.decode(String.self, forKey: .campaignID)
+        bonusActive = try c.decodeIfPresent(Bool.self, forKey: .bonusActive) ?? d.bonusActive
+        bonusDays = c.decodeLenientInt(forKey: .bonusDays) ?? d.bonusDays
+        campaignID = try c.decodeIfPresent(String.self, forKey: .campaignID) ?? d.campaignID
         autoRestartEnabled = try c.decodeIfPresent(Bool.self, forKey: .autoRestartEnabled) ?? d.autoRestartEnabled
-        maxRestartAttempts = try c.decodeIfPresent(Int.self, forKey: .maxRestartAttempts) ?? d.maxRestartAttempts
+        maxRestartAttempts = c.decodeLenientInt(forKey: .maxRestartAttempts) ?? d.maxRestartAttempts
         restartWindowSeconds = try c.decodeIfPresent(Double.self, forKey: .restartWindowSeconds) ?? d.restartWindowSeconds
-        maxConcurrentTunnels = try c.decodeIfPresent(Int.self, forKey: .maxConcurrentTunnels) ?? d.maxConcurrentTunnels
-        outboundRetryAttempts = try c.decodeIfPresent(Int.self, forKey: .outboundRetryAttempts) ?? d.outboundRetryAttempts
+        maxConcurrentTunnels = c.decodeLenientInt(forKey: .maxConcurrentTunnels) ?? d.maxConcurrentTunnels
+        outboundRetryAttempts = c.decodeLenientInt(forKey: .outboundRetryAttempts) ?? d.outboundRetryAttempts
         outboundRetryBaseSeconds = try c.decodeIfPresent(Double.self, forKey: .outboundRetryBaseSeconds) ?? d.outboundRetryBaseSeconds
         doHEnabled = try c.decodeIfPresent(Bool.self, forKey: .doHEnabled) ?? d.doHEnabled
         doHDefaultUpstreamURL = try c.decodeIfPresent(String.self, forKey: .doHDefaultUpstreamURL) ?? d.doHDefaultUpstreamURL
         doHTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .doHTimeoutSeconds) ?? d.doHTimeoutSeconds
         backgroundKeepAliveEnabled = try c.decodeIfPresent(Bool.self, forKey: .backgroundKeepAliveEnabled) ?? d.backgroundKeepAliveEnabled
-        connectionHistoryLimit = try c.decodeIfPresent(Int.self, forKey: .connectionHistoryLimit) ?? d.connectionHistoryLimit
-        usageHistoryCapacity = try c.decodeIfPresent(Int.self, forKey: .usageHistoryCapacity) ?? d.usageHistoryCapacity
+        connectionHistoryLimit = c.decodeLenientInt(forKey: .connectionHistoryLimit) ?? d.connectionHistoryLimit
+        usageHistoryCapacity = c.decodeLenientInt(forKey: .usageHistoryCapacity) ?? d.usageHistoryCapacity
         showQRCode = try c.decodeIfPresent(Bool.self, forKey: .showQRCode) ?? d.showQRCode
         showSocks5Tester = try c.decodeIfPresent(Bool.self, forKey: .showSocks5Tester) ?? d.showSocks5Tester
         showUploadTest = try c.decodeIfPresent(Bool.self, forKey: .showUploadTest) ?? d.showUploadTest
@@ -352,7 +352,6 @@ final class RemoteConfigManager: ObservableObject {
 
         BandwidthPresetConfig.apply(mbpsValues: config.bandwidthPresetsMbps)
         BackgroundKeepAliveConfig.enabled = config.backgroundKeepAliveEnabled
-        DeviceBandwidthControlsConfig.enabled = config.showDeviceBandwidthControls
 
         DebugLog.important("remoteconfig", "applied — relayEnabled=\(config.relayEnabled) paywallEnabled=\(config.paywallEnabled) dailyCapGB=\(config.dailyCapGB) bandwidthPresetsMbps=\(config.bandwidthPresetsMbps) " +
             "trialEnabled=\(config.trialEnabled) trialDurationHours=\(config.trialDurationHours) trialEndDate=\(config.trialEndDate) trialForceEndAll=\(config.trialForceEndAll) bonusActive=\(config.bonusActive) bonusDays=\(config.bonusDays) campaignID=\(config.campaignID) " +
@@ -400,8 +399,21 @@ enum BackgroundKeepAliveConfig {
     }
 }
 
-/// Same bridge pattern for `DevicesView`'s per-device block/bandwidth
-/// controls section.
-enum DeviceBandwidthControlsConfig {
-    static var enabled = true
+private extension KeyedDecodingContainer {
+    /// Int fields are hand-edited or written by FleetAdmin and can arrive as
+    /// e.g. `1.5` — round rather than let one strict decode throw and
+    /// discard the whole config. Absent or unusable values return nil so the
+    /// caller falls back to the default.
+    func decodeLenientInt(forKey key: Key) -> Int? {
+        if let value = try? decodeIfPresent(Int.self, forKey: key) { return value }
+        guard let value = try? decodeIfPresent(Double.self, forKey: key),
+              value.isFinite, abs(value) < Double(Int32.max) else { return nil }
+        return Int(value.rounded())
+    }
+
+    func decodeLenientIntArray(forKey key: Key) -> [Int]? {
+        if let values = try? decodeIfPresent([Int].self, forKey: key) { return values }
+        guard let values = try? decodeIfPresent([Double].self, forKey: key) else { return nil }
+        return values.filter { $0.isFinite && abs($0) < Double(Int32.max) }.map { Int($0.rounded()) }
+    }
 }

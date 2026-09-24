@@ -120,7 +120,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             tunnelLog.log("tunnel network settings applied ipv4=\(TunnelEngine.tunnelLocalAddress, privacy: .public) dns=8.8.8.8,8.8.4.4")
-            self.startEngine(proxyHost: host, proxyPort: port, username: username, password: password,
+            // Dial the pinned IPv4 literal, not the hostname: a name with an AAAA record could send the engine
+            // over IPv6, which has no excluded route (it loops) and would reach the phone under a different device key.
+            self.startEngine(proxyHost: serverIP, proxyPort: port, username: username, password: password,
                              verbosity: config["verbosity"] as? String ?? TunnelEngine.defaultVerbosity)
             completionHandler(nil)
         }

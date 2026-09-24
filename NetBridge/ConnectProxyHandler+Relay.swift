@@ -168,16 +168,11 @@ extension Tunnel {
                         }
                     )
                 case .httpForward(_, _, let rawRequest):
-                    server.send(
-                        content: rawRequest,
-                        contentContext: .defaultMessage,
-                        isComplete: false,
-                        completion: .contentProcessed { [weak self] error in
-                            guard let self = self else { return }
-                            DebugLog.debug("server", tunnel: self.id, "forwarded request bytes=\(rawRequest.count) error=\(ErrorDescription.describe(error))")
-                            self.pipe(server: server, earlyData: Data())
-                        }
-                    )
+                    self.sendInitial(rawRequest, to: server, antiDPI: false) { [weak self] error in
+                        guard let self = self else { return }
+                        DebugLog.debug("server", tunnel: self.id, "forwarded request bytes=\(rawRequest.count) error=\(ErrorDescription.describe(error))")
+                        self.pipe(server: server, earlyData: Data())
+                    }
                 }
             case .waiting(let error):
                 DebugLog.important("server", tunnel: self.id, "state WAITING \(ErrorDescription.describe(error)) attempt=\(attempt) \(self.progressText()) path: \(PathDescription.describe(server.currentPath))")
@@ -218,6 +213,27 @@ extension Tunnel {
                         self.client.send(content: failureReply, completion: .contentProcessed { _ in })
                     }
                     self.cleanup(.retriesExhausted(errorText))
+                } else if self.serverSentFin {
+                    // The server already sent everything; once both sides of
+                    // its socket are closed this can surface as a failure
+                    // (e.g. ENETDOWN) while the tail of its data is still
+                    // queued to the client. Don't cut that off — nothing more
+                    // can go upstream, so finish that direction and let the
+                    // downstream FIN close the tunnel once delivered.
+                    DebugLog.important("server", tunnel: self.id, "server failed after its FIN — draining downstream before close")
+                    self.clientFinished = true
+                    self.finishIfBothClosed()
+                } else if self.clientFinished {
+                    // We already half-closed upstream, and the server closing
+                    // its side surfaces as ENETDOWN even while its last data
+                    // (and FIN) are still unread in the receive buffer —
+                    // measured: ~1 MB of an 8 MB response lost this way. Keep
+                    // reading: the pending receive either delivers the rest
+                    // and the FIN (normal close) or fails (receiveError).
+                    DebugLog.important("server", tunnel: self.id, "server failed after our FIN — reading its remaining data before close")
+                    self.queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+                        self?.cleanup(.serverFailed(errorText))
+                    }
                 } else {
                     self.cleanup(.serverFailed(errorText))
                 }
@@ -232,20 +248,47 @@ extension Tunnel {
     }
 
     private func pipe(server: NWConnection, earlyData: Data) {
-        if !earlyData.isEmpty {
-            DebugLog.debug("data", tunnel: id, "sending early data bytes=\(earlyData.count) to server")
-            let onSendError: (NWError?) -> Void = { [weak self] error in
-                guard let self = self, let error = error else { return }
+        forward(from: server, to: client, isUpstream: false)
+        guard !earlyData.isEmpty else {
+            forward(from: client, to: server, isUpstream: true)
+            return
+        }
+        DebugLog.debug("data", tunnel: id, "sending early data bytes=\(earlyData.count) to server")
+        // Start relaying client->server only once the early data is fully
+        // sent: Anti-DPI sends a fragmented handshake one fragment at a time,
+        // and the next client chunk must not land between those fragments.
+        sendInitial(earlyData, to: server, antiDPI: AntiDPI.isEnabled) { [weak self] error in
+            guard let self = self else { return }
+            if let error = error {
                 DebugLog.important("data", tunnel: self.id, "early data send error \(ErrorDescription.describe(error))")
             }
-            if AntiDPI.isEnabled {
-                AntiDPI.send(earlyData, over: server, queue: queue, isHandshake: true, completion: onSendError)
+            guard !self.cleanedUp else { return }
+            self.forward(from: self.client, to: server, isUpstream: true)
+        }
+    }
+
+    /// Sends client bytes that arrived with the request (a plain-HTTP
+    /// request and any body read with its headers, or data after a CONNECT)
+    /// through the same cap and usage accounting as relayed chunks.
+    private func sendInitial(_ data: Data, to server: NWConnection, antiDPI: Bool, completion: @escaping (NWError?) -> Void) {
+        let count = data.count
+        bytesUp += UInt64(count)
+        chunksUp += 1
+        let doSend = { [weak self] in
+            guard let self, !self.cleanedUp else { return }
+            self.stats.addBytesUp(count)
+            if antiDPI {
+                AntiDPI.send(data, over: server, queue: self.queue, isHandshake: true, completion: completion)
             } else {
-                server.send(content: earlyData, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed(onSendError))
+                server.send(content: data, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed(completion))
             }
         }
-        forward(from: client, to: server, isUpstream: true)
-        forward(from: server, to: client, isUpstream: false)
+        let delay = rateLimiter.consume(count)
+        if delay > 0 {
+            queue.asyncAfter(deadline: .now() + delay, execute: doSend)
+        } else {
+            doSend()
+        }
     }
 
     /// Outstanding-bytes cap per direction for pipelined reads (below) —
@@ -265,9 +308,17 @@ extension Tunnel {
 
     private func forward(from source: NWConnection, to destination: NWConnection, isUpstream: Bool) {
         let direction = isUpstream ? "client->server" : "server->client"
-        source.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [weak self] data, _, isComplete, error in
+        // Never read past the remaining in-flight window (with a floor so a
+        // nearly-full window doesn't degrade into tiny reads), and when the
+        // device is capped read only ~100 ms of budget at a time.
+        let window = Self.maxInFlightBytesPerDirection - inFlightBytes(isUpstream: isUpstream)
+        let maxLength = rateLimiter.maxReadLength(default: max(64 * 1024, min(1 << 20, window)))
+        source.receive(minimumIncompleteLength: 1, maximumLength: maxLength) { [weak self] data, _, isComplete, error in
             guard let self = self else { return }
             DebugLog.trace("data", tunnel: self.id, "\(direction) recv bytes=\(data?.count ?? 0) isComplete=\(isComplete) error=\(ErrorDescription.describe(error))")
+            if isComplete {
+                if isUpstream { self.clientSentFin = true } else { self.serverSentFin = true }
+            }
 
             guard let data = data, !data.isEmpty else {
                 if isComplete {
@@ -288,11 +339,9 @@ extension Tunnel {
                 self.sniffedHost = self.sniffedHost ?? TrafficSniffer.extractHost(from: data)
             }
             if isUpstream {
-                self.stats.addBytesUp(count)
                 self.bytesUp += UInt64(count)
                 self.chunksUp += 1
             } else {
-                self.stats.addBytesDown(count)
                 self.bytesDown += UInt64(count)
                 self.chunksDown += 1
                 if self.firstByteDownAt == nil {
@@ -314,8 +363,12 @@ extension Tunnel {
             // a second chunk's fragmented send concurrently could interleave
             // them out of order on the wire — only pipeline when that can't
             // happen. Never pipeline the chunk carrying the FIN (isComplete)
-            // — nothing more to read from an already-finished source.
-            let canPipeline = !(isUpstream && AntiDPI.isEnabled)
+            // — nothing more to read from an already-finished source. Never
+            // pipeline while the device is rate-limited either: the cap is
+            // the bottleneck there anyway, and stop-and-wait keeps at most
+            // one delayed send per direction outstanding. Checked per chunk
+            // so a cap set or lifted mid-connection takes effect right away.
+            let canPipeline = !self.rateLimiter.isLimited && !(isUpstream && AntiDPI.isEnabled)
             let pipelinedRead = canPipeline && !isComplete
                 && self.inFlightBytes(isUpstream: isUpstream) < Self.maxInFlightBytesPerDirection
             self.sendsInFlight += 1
@@ -326,11 +379,17 @@ extension Tunnel {
 
             let sendStart = DispatchTime.now()
             let doSend = { [weak self] in
-                guard let self else { return }
+                guard let self, !self.cleanedUp else { return }
+                // Counted here, after any cap delay, so device speed and
+                // usage track what's actually relayed rather than spiking
+                // ahead of the cap at read time.
+                if isUpstream { self.stats.addBytesUp(count) } else { self.stats.addBytesDown(count) }
                 let onSendComplete: (NWError?) -> Void = { [weak self] sendError in
                     guard let self = self else { return }
                     self.sendsInFlight -= 1
                     self.addInFlightBytes(-count, isUpstream: isUpstream)
+                    // Sends still progressing (e.g. paced by a cap) aren't a stall.
+                    self.lastDataAt = DispatchTime.now()
                     if !isUpstream && sendError == nil && self.firstByteToClientAt == nil {
                         self.firstByteToClientAt = DispatchTime.now()
                         DebugLog.debug("data", tunnel: self.id, "first byte forwarded to client after \(Self.ms(since: self.acceptedAt))")
@@ -353,8 +412,11 @@ extension Tunnel {
                 }
             }
             // A device-level bandwidth cap: delay the send instead of sending
-            // immediately, so the long-run rate stays at the cap.
-            if let delay = self.rateLimiter?.consume(count), delay > 0 {
+            // immediately, so the long-run rate stays at the cap. The limiter
+            // carries debt across all of the device's tunnels, so delays for
+            // successive chunks never shrink and sends stay in order.
+            let delay = self.rateLimiter.consume(count)
+            if delay > 0 {
                 self.queue.asyncAfter(deadline: .now() + delay, execute: doSend)
             } else {
                 doSend()
@@ -364,12 +426,20 @@ extension Tunnel {
 
     private func forwardFin(to destination: NWConnection, isUpstream: Bool) {
         DebugLog.debug("data", tunnel: id, "forwarding FIN to \(isUpstream ? "server" : "client")")
+        // Mark this direction finished only once the FIN send completes:
+        // sends complete in order, so every chunk queued ahead of it
+        // (pipelined reads can leave several) has been handed off by then.
+        // Finishing earlier let cleanup() cancel the connections while the
+        // tail of the transfer was still queued, silently truncating it.
         destination.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { [weak self] error in
-            guard let self = self, let error = error else { return }
-            DebugLog.important("data", tunnel: self.id, "FIN send error \(ErrorDescription.describe(error))")
+            guard let self = self else { return }
+            if let error = error {
+                DebugLog.important("data", tunnel: self.id, "FIN send error \(ErrorDescription.describe(error))")
+            }
+            guard !self.cleanedUp else { return }
+            if isUpstream { self.clientFinished = true } else { self.serverFinished = true }
+            self.finishIfBothClosed()
         })
-        if isUpstream { self.clientFinished = true } else { self.serverFinished = true }
-        self.finishIfBothClosed()
     }
 
     // MARK: - Teardown
@@ -429,7 +499,7 @@ extension Tunnel {
         onClose?()
     }
 
-    private func finishIfBothClosed() {
+    func finishIfBothClosed() {
         if clientFinished && serverFinished {
             cleanup(.bothFinished)
         }

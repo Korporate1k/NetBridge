@@ -2385,3 +2385,79 @@ Other state:
   - create the subscription and reprice the lifetime product
   - add macOS to the NetBridge app
   - publish the privacy policy and set `PurchaseManager.privacyURL`
+
+## 2026-09-23 (late): per-device bandwidth cap fixed, plus the gaps a full-app sweep found
+
+The cap was broken in two ways (all numbers measured on the sim, cap = 1,000,000 B/s, 10 MB file over CONNECT):
+
+| Build | 1 stream | 4 parallel | Data intact? |
+|---|---|---|---|
+| Committed HEAD (63e1079) | 2.7× cap | 5.3× cap | **no — capped downloads were corrupted** |
+| Before `addc67f` (pipelining) | 2.1× cap | 4.4× cap | yes |
+| This fix | 1.10× (the 1 s starting burst) | **1.00×** | yes |
+
+Root causes:
+- `addc67f` (pipelined relay) started reading the next chunk before a capped chunk's delayed send. Delays didn't stack, so later, shorter-delayed chunks overtook earlier ones and corrupted the stream.
+- `RateLimiter.consume` always forgave its debt (`tokens = 0`). One stream got about 2× the cap and N streams about N× (standalone test: 1.83× and 9.5×). This predates `addc67f`.
+
+Fixes (uncommitted, on `feature/macos-client`):
+- **Enforcement:**
+  - `RateLimiter` carries its debt. New `admit()` for UDP (drop, don't queue), `isLimited` and `maxReadLength()` (about 100 ms of budget per read when capped).
+  - Each `DeviceRegistry.Entry` owns one limiter for its whole life (rate 0 = unlimited). `attach(forDevice:)` returns stats and the limiter under one lock. Cap changes reach open tunnels, the relay checks `isLimited` per chunk, and `forget` lifts the cap on open tunnels.
+  - A cap of 0 is stored as nil. `deviceKey` folds `::ffff:a.b.c.d` into `a.b.c.d`.
+- **Relay:**
+  - Bytes are counted to stats when sent (after the cap delay), not when read.
+  - The plain-HTTP first request and CONNECT/SOCKS early data now go through the cap (`sendInitial`).
+  - Client→server reads start only after early data is fully sent (Anti-DPI handshake fragments can no longer interleave).
+  - Reads are capped to the remaining in-flight window.
+  - `lastDataAt` is updated on send completion (no false STALL logs).
+- **Lost end of transfers:** this predates pipelining and was worse before it. Once one side has half-closed, Network.framework reports the other side's socket `.failed(ENETDOWN)` while its last data and FIN are still unread. `cleanup` then threw that data away. Now the tunnel keeps reading instead, with a 5 s fallback, and `forwardFin` only marks a direction finished from the FIN send's completion.
+  - Download after the client half-closes: 12/20 complete on HEAD, 5/20 before `addc67f`, 40/40 now.
+  - Upload after the server half-closes: 11/20 on HEAD, 4/20 before `addc67f`, 30/30 now.
+- **UDP:** `UDPRelay` gets the device limiter, and datagrams over the cap are dropped (`capDrops` in logs). It only accepts a UDP sender from the control connection's device.
+  - Measured with a 250 KB/s cap: about 259 KB/s relayed including the burst, 6,549 datagrams dropped.
+  - `scripts/udp_qa.py` passes 23/23.
+- **UI (`DevicesView`):**
+  - Custom Mbps field: locale-aware parsing, applied on submit or leaving the field, clamped to 0.1–10,000 Mbps with an inline error. It no longer crashes on a pasted `inf` or `1e20`.
+  - The row and detail screens show combined ↑↓ against the cap. Footer and Forget dialog text updated.
+  - The `showDeviceBandwidthControls` flag is now passed from `RemoteConfigManager`, replacing the static `DeviceBandwidthControlsConfig`. When controls are hidden, an existing cap or block shows with Remove/Unblock.
+  - Remote presets are validated, deduplicated and sorted. The upload test's rate field uses the same clamp.
+- **Remote config:** `paywallEnabled`, `bonusActive`, `bonusDays` and `campaignID` fall back to defaults when missing. Int fields accept decimals (rounded) instead of rejecting the whole config.
+- **FleetAdmin.html:**
+  - Int fields are truncated and kept ≥ 0.
+  - Presets are deduplicated, sorted and limited to 1–10,000.
+  - "Next launch" text corrected to about 10 s.
+  - Presets moved to a new "Device Limits" card, marked as free.
+
+Verified:
+- iOS and Mac builds succeed. `Socks5Client` tests: 30 passed.
+- Capped and uncapped runs interleaved 3×: capped 4-parallel at 1,003,001 / 966,149 / 1,001,244 B/s, uncapped 373–792 MB/s on loopback, all SHA-256 OK.
+- Unsigned IPA built: 1.0 (20260923.235500).
+- Not verified: the Custom-field and hidden-controls detail UI, since there's no tap automation. Needs a manual pass.
+
+Still open:
+- The Operator Manual PDF (pp. 6, 21, 31) still describes the old flag and presets behavior, and needs regenerating.
+- Suspected, not confirmed: `PacketTunnelProvider` pins an IPv4 route but hands tun2proxy the hostname. If that hostname resolves to IPv6, a client could land under a new, uncapped device key.
+- The Mac app has no limiter of its own (by design, it's a client). The phone caps its TCP and UDP.
+- Sim note: `qa.forcePaywall` is set to 1 in the sim's defaults. The test traffic pushed today's free-tier usage over 1 GB, so with that flag on, the sim proxy refuses new connections until tomorrow (or until the flag is turned off).
+
+## 2026-09-24: IPv6 per-device cap bypass closed
+
+This closes the open item from 2026-09-23 (late): "a client could land under a new, uncapped device key" over IPv6. It was confirmed real, not only suspected. The sim's `devices.json` already had an `"ip": "::1"` entry next to `127.0.0.1`. Device caps and blocks are keyed by source IP, and the TCP listener was dual-stack. So any client that reached the phone over native IPv6 (link-local or SLAAC) got a second key with no cap and no block.
+
+Fixes (uncommitted):
+- **Phone, `ProxyServer.swift`:** every TCP listener (primary and extra ports) forces `NWProtocolIP.Options.version = .v4`. `lsof` now shows `IPv4 TCP *:18080`. IPv6 clients are refused at connect, so there's no second key. Everything the phone advertises is already IPv4 (pairing, `primaryIPv4()`, UDP ASSOCIATE replies).
+  - `UDPRelay`'s client-facing listener stays dual-stack, per its egress-socket comment. It already drops any sender whose key doesn't match the control connection's, and that key is now always IPv4.
+- **Client, `PacketTunnelProvider.swift` (iOS and Mac):** tun2proxy now dials the pinned IPv4 address (`serverIP`) instead of the hostname. A name with an AAAA record could otherwise send the engine over IPv6, which has no excluded route (it loops) and would give the phone a different key.
+
+Verified:
+- iOS and Mac builds succeed. `Socks5Client` tests: 30 passed.
+- Sim: `socks5h://127.0.0.1:18080` → 200. `[::1]:18080` and the Mac's global IPv6 `:18080` → connection refused.
+- Cap = 1,000,000 B/s on 127.0.0.1, 4-parallel 10 MB CONNECT downloads, interleaved 3× with uncapped runs through 10.0.0.177: capped 1,020,740 / 1,015,391 / 1,017,395 B/s, uncapped 281–405 MB/s, all SHA-256 OK. `scripts/udp_qa.py` passes 23/23.
+- Unsigned IPA built: 1.0 (20260924.103452).
+- Not verified live: Mac client → phone with the IPv4-literal dial. It's a one-argument change, and the Mac build succeeds.
+
+Still open:
+- A device can still get a fresh key by changing its IPv4 address (new DHCP lease or static IP). iOS exposes no MAC address to key on, so closing that would need per-device client authentication.
+- The stale `::1` entry is still in the sim's `devices.json`. It's harmless, and "Forget" in Devices removes it.
+- The sim's `qa.forcePaywall` was set to 0 for the test run and restored to 1 afterwards.
