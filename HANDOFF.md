@@ -2461,3 +2461,8 @@ Still open:
 - A device can still get a fresh key by changing its IPv4 address (new DHCP lease or static IP). iOS exposes no MAC address to key on, so closing that would need per-device client authentication.
 - The stale `::1` entry is still in the sim's `devices.json`. It's harmless, and "Forget" in Devices removes it.
 - The sim's `qa.forcePaywall` was set to 0 for the test run and restored to 1 afterwards.
+
+## 2026-09-24: TestFlight archive build 5
+
+Everything from the two sections above is committed as f04f48a on `feature/macos-client`: the cap fix, the lost-transfer-tail fix and the IPv6 bypass fix. `CURRENT_PROJECT_VERSION` 4 → 5 in all four settings is committed on its own as b0135f0, with no command-line override. Archived from a clean tree:
+`~/Library/Developer/Xcode/Archives/2026-09-24/NetBridge 9-24-26, 12.39 PM build 5.xcarchive`, NetBridge 1.0 build **5** on both the app and the tunnel extension (Release, team DS8AMC8BSV; Organizer → Distribute App re-signs for distribution). The release binary has no QA hooks. NOT uploaded. Next iOS TestFlight build = 6. The Mac build train is unchanged (next Mac build = 2).
