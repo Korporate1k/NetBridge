@@ -1,0 +1,56 @@
+[package]
+name = "netbridge-windows"
+version = "1.0.0"
+edition = "2024"
+description = "NetBridge Windows client: system-wide TCP + UDP through a NetBridge (SOCKS5) server"
+publish = false
+
+[[bin]]
+name = "NetBridge"
+path = "src/main.rs"
+
+[dependencies]
+# The same engine the iOS/macOS clients link: tun2proxy @ fc77ca3 + LWIPTunnelEngine/patches 0001-0004,
+# prepared by ./patch-deps.sh.
+tun2proxy = { path = "vendor/tun2proxy" }
+tokio = { version = "1", features = ["full"] }
+log = { version = "0.4", features = ["std"] }
+url = "2.5"
+percent-encoding = "2.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+# wgpu first (Direct3D, with the WARP software fallback on PCs/VMs without a GPU driver); glow as a second try.
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "glow", "default_fonts"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
+rqrr = "0.11"
+rfd = "0.17"
+
+[target.'cfg(windows)'.dependencies]
+# Must be the exact version tun2proxy uses, so the device we create is the type its engine expects.
+# Same version tun2proxy's `tun` dependency uses; we drive the adapter directly (see src/wintun_device.rs).
+wintun-bindings = "=0.7.40"
+tray-icon = "0.25"
+keyring = { version = "3", features = ["windows-native"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+] }
+
+
+# cargo only honours [patch] in the root package: point tun2proxy's ipstack at the patched copy (0002 + 0004).
+[patch.crates-io]
+ipstack = { path = "vendor/tun2proxy/vendor/ipstack" }
+
+[profile.release]
+strip = "symbols"
+lto = "thin"
+
+[dev-dependencies]
+qrcode = { version = "0.14", default-features = false, features = ["image"] }
