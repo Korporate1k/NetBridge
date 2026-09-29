@@ -4,6 +4,18 @@ An iOS app that runs a local **HTTP CONNECT + SOCKS5 (TCP and UDP ASSOCIATE)
 proxy** on your iPhone, so another device on the same network (Wi-Fi, Personal
 Hotspot, or USB) can route its traffic through the phone.
 
+It also has **clients** that send a whole device's traffic (TCP and UDP) through
+such a phone as a system-wide VPN:
+
+- **iPhone/iPad**: the app's **Client** tab (a packet-tunnel VPN; pair by
+  scanning the other phone's QR code).
+- **macOS**: `NetBridgeMac.xcodeproj` (generated from `project-mac.yml` with
+  XcodeGen), a menu-bar app with the same tunnel.
+- **Windows**: `NetBridgeWindows/` (see below).
+
+All three share one engine (tun2proxy with the local patches in
+`LWIPTunnelEngine/patches/`) and the same `socks5://` / QR pairing format.
+
 Useful for routing a second device's traffic through your phone for testing,
 debugging, or general local-network relaying — point any HTTP-CONNECT- or
 SOCKS5-capable client at the phone's address and port.
@@ -12,9 +24,12 @@ SOCKS5-capable client at the phone's address and port.
 
 - A Mac with Xcode (15+).
 - An iPhone (any iOS 15+ device).
-- A free Apple ID is enough — no Network Extension or restricted entitlement
-  is used, so it runs via Xcode or sideloading (AltStore / SideStore /
-  Sideloadly).
+- For the **proxy** alone, a free Apple ID is enough, so it runs via Xcode or
+  sideloading (AltStore / SideStore / Sideloadly).
+- The **Client** (VPN) tab and the macOS client use a Network Extension
+  (packet tunnel), which needs a paid developer account's
+  `packet-tunnel-provider` entitlement.
+- The engine xcframework is rebuilt with `scripts/build-tun2proxy-apple.sh`.
 
 ## Build
 
@@ -40,6 +55,16 @@ SOCKS5-capable client at the phone's address and port.
 - Recent-connections list, auto-restart on an unexpected listener drop,
   save/switch config profiles, a QR code for the address, and a live
   usage graph — all on the dashboard or in Settings.
+
+## Windows client
+
+`NetBridgeWindows/` is a Windows 10/11 (x64) client. Like the macOS app, it
+sends all of the PC's TCP and UDP through the phone. Build it on a Mac with
+`scripts/build-windows.sh`, which produces
+`build/windows/NetBridge-win-x64.zip`. Unzip it on the PC, run
+`NetBridge.exe` (it asks for administrator rights), and pair it by address,
+`socks5://` link, or a QR code screenshot. See
+`NetBridgeWindows/README-windows.txt`.
 
 ## Background survival
 

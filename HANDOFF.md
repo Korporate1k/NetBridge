@@ -2470,3 +2470,316 @@ Everything from the two sections above is committed as f04f48a on `feature/macos
 ## 2026-09-24: correction, the next build is still 5
 
 Build 5 is archived but NOT uploaded, so 5 is still the build to ship. It is not 6, as the section above says. Re-archive at 5 as needed, and bump to 6 only after build 5 is uploaded to TestFlight. The project file stays at `CURRENT_PROJECT_VERSION = 5` (all four).
+
+## 2026-09-26: Windows client (x64), not yet run on Windows
+
+New `NetBridgeWindows/` project: a Rust + egui app that does what the Mac client does, a system-wide VPN carrying TCP and UDP through the phone's SOCKS5 server. It has no Devices, relay or Pro screens. Nothing is committed yet (`NetBridgeWindows/` and `scripts/build-windows.sh` are untracked).
+
+**Build (on this Mac):** `scripts/build-windows.sh` → `build/windows/NetBridge-win-x64.zip` (NetBridge.exe + wintun.dll + README.txt + wintun-LICENSE.txt).
+- Cross-compiles to `x86_64-pc-windows-msvc` with `cargo-xwin` (installed to `~/.cargo/bin`; the MSVC CRT and SDK are cached in `~/Library/Caches/cargo-xwin`). There is no Homebrew on this Mac, so mingw is not an option.
+- `NetBridgeWindows/patch-deps.sh` vendors tun2proxy @ fc77ca3 with the **same patches 0001-0004** as the Apple builds (grep-checked in the vendored copy).
+- It also stubs out ipstack's `build.rs`: when targeting Windows it only copies wintun.dll for ipstack's examples, and it fails as a path dependency.
+- `Cargo.lock` was seeded from `LWIPTunnelEngine/patches/tun2proxy-Cargo.lock`: all 235 crates shared with the Apple engine keep their pinned versions (checked).
+- `wintun.dll` is the official 0.14.1 build, pinned by zip SHA-256 `07c25618…ef51`.
+- `build.rs` writes the `.res` file itself (RT_MANIFEST, `requireAdministrator`) because this Mac has no rc/llvm-rc. Checked by parsing the PE resource table: type 24, id 1, and the GUI subsystem is set.
+
+**Design decisions**
+- **tun2proxy's own Windows `--setup` is NOT used.** tproxy-config 7.0.7's Windows code has three problems:
+  - on teardown it deletes every 0.0.0.0/0 route, including the DHCP one, and re-adds a hand-made route with metric 200;
+  - it routes IPv4 only, so IPv6 would leak;
+  - if the process dies while connected, the PC is left with no working default route.
+
+  Instead, `src/routing.rs` adds routes bound to the wintun adapter's index: 0.0.0.0/1 + 128.0.0.0/1 and ::/1 + 8000::/1 (the adapter gets `fd00:7470::2/64`). It adds a /32 bypass route to the server over the physical interface (GetBestRoute2, taken before the tunnel exists), and an NRPT rule `.` → 8.8.8.8 (Comment "NetBridge") so every DNS lookup goes into the tunnel and the virtual DNS answers it.
+  - All routes are `store=active`.
+  - If the process dies, Windows removes the adapter and its routes.
+  - Only the bypass route and the NRPT rule can outlive a crash. Both are removed on the next launch (`pending_bypass` in config.json).
+- The engine is called through `tun2proxy::run` directly. `general_run_for_api` is avoided because its helper thread calls `exit(-1)` after 2 s.
+  - The args match `TunnelEngine.swift`: virtual DNS, 1000 sessions, 120 s UDP timeout, warn verbosity.
+  - `ArgProxy` is built directly from the pinned address, because tun2proxy's URL parser rejects bracketed IPv6 literals; a unit test caught this.
+- Tunnel address 10.254.77.2/24. It is deliberately not 10.0.0.x, a common home LAN that the adapter's /24 would shadow.
+- **The health probe is a real SOCKS5 greeting (+ RFC 1929 auth) followed by UDP ASSOCIATE**, every 20 s with a 3 s timeout. It is not a TCP connect, which a suspended relay passes. The UI reports Proxy: Answering / Not answering / Sign-in refused, and UDP: Relayed / Refused.
+- Auto-reconnect follows the Mac rules (2/5/15 s, forgiven after 60 s up *with* downlink bytes). A failed first Connect by the user is shown and not retried. A network-change restart happens at most once per session, and only if the server answered earlier, failed twice in a row, and the physical path (interface or default gateway) changed.
+- The tray menu handles Connect/Disconnect/Show/Quit outside egui frames. Closing the window while connected minimises instead of quitting. Every exit path waits for the controller to take routes down. A named mutex allows only one instance.
+- Password in Windows Credential Manager (`keyring`), rest in `%APPDATA%\NetBridge\config.json`; log `%LOCALAPPDATA%\NetBridge\netbridge.log` (8 MB rotation; engine at warn, `NETBRIDGE_LOG=debug` raises it).
+
+**Verified (offline, on the Mac)**
+- `cargo test`: 28 passed. Coverage:
+  - URI parse/format parity with `ClientConfiguration`, including reserved characters and IPv6;
+  - the probe against a fake SOCKS5 server: healthy, UDP refused, auth accepted/rejected/missing, **accepts TCP but stays silent → Not answering within the timeout**, reject-all, nothing listening;
+  - the reconnect policy;
+  - QR round-trip through the `qrcode` crate;
+  - the engine Args, whose credentials survive reserved characters.
+- The Windows release build compiles with no warnings. `NetBridge.exe` is PE32+ x86-64 GUI, and contains the Windows paths (GetBestRoute2, the NRPT script, the /1 routes, the tray).
+
+**NOT verified. Nothing has run on Windows. There is no PC yet.**
+- Adapter creation with the fixed GUID. That includes reusing it on reconnect (`stop()` now waits up to 3 s for the engine to release it first) and whether a hard-killed process leaves the adapter behind.
+- Every `netsh` route and address command and the NRPT PowerShell rule (syntax is checked only against docs). Whether DNS actually stops leaking, and whether IPv6 capture works on a PC with native IPv6.
+- UDP ASSOCIATE through the tunnel, egress-IP proof, throughput, auto-reconnect, the network-change restart, tray behaviour while minimised, and whether eframe drops `App` on window close (the fallback is next-launch cleanup).
+- Patch 0004's fatal-errno list is Darwin-specific (9, 39). On Windows those numbers mean something else, so a dead wintun session may only end via the consecutive-failure cap.
+
+**First run on a Windows PC** (x64, Windows 10/11): unzip, run NetBridge.exe (UAC prompt), pair with the phone, and Connect. Then check:
+- `route print` shows the /1 routes on the NetBridge adapter plus the /32 bypass;
+- `Get-DnsClientNrptRule` shows the rule;
+- egress IP through the tunnel, using IP-literal targets per the virtual-DNS note;
+- `scripts/udp_qa.py` against the phone;
+- Disconnect removes everything; a kill from Task Manager followed by a relaunch cleans up.
+
+## 2026-09-26 (afternoon): Windows client tested in a Tiny11 ARM64 VM; four bugs found and fixed
+
+The owner asked for a Tiny10 VM. NTDEV never published Tiny10 for ARM64, so with the owner's OK this used **Tiny11 ARM64** (`tiny11a64 r1.iso`, archive.org, SHA-1 `55e84983…` verified) in **UTM 4.7.5** (QEMU, UEFI, NVMe, shared network) on this M1.
+- Windows 11 ARM64 build 22621, user `m`.
+- UTM guest tools are installed, so `utmctl exec` / `file push|pull` drive the VM from the Mac as SYSTEM.
+- VM files live in `~/VMs/`; helpers there are `nbtest.ps1`, `nbrun.sh`, `nbdns.ps1` and `headless-*.bat`.
+- Server under test: `scripts/socks5_test_server.py` (new: CONNECT + UDP ASSOCIATE + RFC 1929, logs every request) on the Mac at `:18099`, user `nb`.
+- `:1080` on this Mac is taken by an older `/tmp/socks5server.py` (running since 2026-09-17); it was left alone.
+
+**New in the client**
+- An ARM64 build (`scripts/build-windows.sh arm64` → `NetBridge-win-arm64.zip`; the manifest is now architecture-neutral).
+- `NetBridge.exe --connect <socks5 URI> [--for N]`, a headless mode for scripted tests.
+
+**Bugs found by the VM, all fixed**
+1. **The window never opened on a PC without a GPU driver.** egui_glow needs OpenGL 2.0+, and the VM (like driverless PCs and some RDP sessions) has only 1.1. The app exited silently.
+   - Now it tries wgpu first (DX12 falls back to "Microsoft Basic Render Driver", confirmed in the log), then glow, then shows an error box naming the log.
+2. **Every hostname failed through the tunnel on Windows.** tun2proxy's virtual DNS answers *every* query type with an A record. Windows' getaddrinfo rejects the AAAA reply ("non-recoverable error"), while `Resolve-DnsName -Type A` still worked.
+   - New **patch 0005** (`LWIPTunnelEngine/patches/0005-virtual-dns-nodata-for-non-a.patch`): non-A queries get NOERROR with no answers.
+   - It is applied to the **Windows build only** (`patch-deps.sh`). The iOS/macOS slices are unchanged. Whether they need it too is an open question: Apple seems to tolerate the old answer, but it is still a malformed reply.
+3. **Our own info-level log lines were dropped.** The logger matched the target `netbridge`, but the crate is `NetBridge`. The match is now case-insensitive.
+4. (Test harness only) In a `.bat`, `%40` reads as `%4` + `0`; percent signs must be doubled.
+
+**Verified live (ARM64 build, headless as SYSTEM, server 192.168.64.1 = on-link path)**
+- Adapter `NetBridge` (10.254.77.2/24 plus fd00:7470::2/64).
+- Routes: 0.0.0.0/1 + 128.0.0.0/1 and ::/1 + 8000::/1 on it, plus the /32 bypass to the server on Ethernet.
+- NRPT `.` → 8.8.8.8 (Comment NetBridge).
+- The health probe reports `Answering { udp: true }`.
+- Virtual DNS: `example.com` → 198.18.0.5.
+- The test server logged `CONNECT 1.1.1.1:80`, **`CONNECT example.com:80`** (the hostname reaches the proxy, so no DNS leak) and **`UDP -> 162.159.200.1:123`** with a reply.
+- Counters reported 34 KB up / 46 KB down.
+- Timed stop removed everything (adapter, routes, bypass, NRPT) and the process exited in about 5 s.
+- **Kill test** (`taskkill /F` while connected): within seconds Windows removed the adapter and all tunnel routes. The bypass /32 and the NRPT rule remained, as designed; the internet still worked (DNS straight to 8.8.8.8). On the next launch, `pending_bypass` was read and the route and the rule were removed.
+
+**GUI (ARM64):** launched from the desktop through the UAC prompt ("Publisher: Unknown", since the exe is unsigned) and rendered through the WARP software renderer.
+- It was then connected to **10.0.0.108:8081**, not by me (presumably the owner's phone): Proxy Answering, UDP Relayed, IPv6 Tunnelled, traffic flowing.
+- The first attempt, to :8091, was refused.
+
+**Found, not fixed**
+- **Connecting takes about 30 s** in this VM: about 10 s of stale cleanup at startup and about 20 s of setup, mostly the PowerShell NRPT cmdlets. A candidate fix is writing the NRPT registry key directly.
+- Windows mDNS (224.0.0.251/ff02::fb), LLMNR and NetBIOS broadcasts go into the tunnel and are relayed to the proxy. This is noise and leaks multicast queries to the far side. Candidate fix: drop multicast/broadcast in the engine, or add on-link routes for 224.0.0.0/4 and ff00::/8 on the physical interface.
+- Engine shutdown logs dozens of ERROR "Failed to send session removal … channel closed" lines. They are harmless but noisy.
+- The tun crate adds its own 0.0.0.0/0 route via 10.254.77.1 on the adapter. It is harmless (the /1 routes win, and it disappears with the adapter).
+- `utmctl exec` swallows `--flags` meant for the guest program; wrap them in a `.bat`.
+- UTM itself crashed once on first start (SIGSEGV in `utmctl start`, before its What's New dialog). Starting from the UI works.
+
+**Not yet done:** an x64 build run under Windows' x64 emulation (rebuilt with all fixes, not yet pushed), the bypass route through a gateway (server 10.0.0.177), the tray-icon check, and code signing (UAC currently shows "Unknown publisher").
+
+## 2026-09-26 (late): Windows client uploaded as a DRAFT GitHub release
+
+- Repo: `Korporate1k/NetBridge` (private).
+- Release: draft `windows-v1.0.0`, titled "NetBridge for Windows 1.0.0 (preview)". **Not published.** The owner publishes it from the GitHub UI.
+- Assets, rebuilt with every VM fix (renderer fallback, patch 0005, logging, `--connect`), 28/28 tests passing. Re-downloaded from GitHub and SHA-256-checked; both match:
+  - `NetBridge-win-x64.zip`: `f6d0ee3319fed9df6a24ef447d79f2c33f4cf131f3315a9c1e80fafe8d62f72a` (exe `bf7d6d7c…3c6e`)
+  - `NetBridge-win-arm64.zip`: `e314c8366182475ccee5edd7395fe937283b6b6f7a2cc9d78ec81320bd23e6f6` (exe `a8df896d…e3`)
+- No source was pushed.
+- Because this is a draft, the tag `windows-v1.0.0` is created on `main` only when the release is published.
+- The release notes state the build is unsigned ("Unknown publisher") and that the x64 build has not been run on Windows yet.
+- `gh` had an invalid token; the owner re-authenticated (scopes: repo, gist, read:org).
+
+## 2026-09-26 (late): GitHub repo stripped to the Windows client and made PUBLIC
+
+At the owner's request: "rm everything that isnt the clients then make it public".
+- **Backup first:** `~/Desktop/NetBridge-github-backup-2026-09-26.bundle` (plus the `.git` mirror next to it) holds the old history:
+  - `b45a45d` NetBridge unsigned IPA
+  - `c9b54fc` Add README (the PS5 / tethering text)
+- **`main` rewritten** (owner chose "rewrite history") to a single commit, `1d81687` "NetBridge for Windows: README", authored with the GitHub no-reply address (`280885552+Korporate1k@users.noreply.github.com`) so no personal email is public. The IPA and the old README are gone from the branch.
+- Repo `Korporate1k/NetBridge` is now **public**.
+- Release **`windows-v1.0.0` published and marked latest**, tag on `1d81687`. Both zips download anonymously (HTTP 200), with SHA-256 values as in the section above.
+  - Note: `gh release edit <tag>` can't find a *draft*; the release was published with `gh api -X PATCH repos/…/releases/397366165 -F draft=false -f tag_name=…`.
+- **Known and accepted by the owner:** GitHub still serves the old orphaned commits by exact SHA (`/commit/c9b54fc`, `/commit/b45a45d` return 200) until it garbage-collects them. The owner chose to leave this. They are not on any branch, and their author field is only `matthew@Matthews-MacBook-Air.local`.
+- **Rollback:** force-push `main` from the backup mirror `~/Desktop/NetBridge-github-backup-2026-09-26.git`, then set the repo back to private.
+- The local repo `~/Desktop/NetBridge` has no remote and was not pushed anywhere.
+
+## 2026-09-26 (evening): "Windows is much slower than Mac": code review with 3 parallel agents; fixes applied, NOT live-tested
+
+The owner asked for no testing, just "find issues and fix them". Three reviews ran: the data path (read-only), general correctness (read-only), and connect time (done on a scratch copy, then merged). Everything below is built, and host tests pass (38 incl. new ones); both `scripts/build-windows.sh x64|arm64` zips were rebuilt. **None of it has run on Windows.** The GitHub release assets were **not** replaced.
+
+**Throughput (data path)**
+- **Windows adapter reads went through three thread hand-offs.** `tun` 0.8.14's async read (wintun-bindings `AsyncSession`) parks a `WaitForMultipleObjects` on the `blocking` crate's pool every time the ring empties.
+  - Fix: new `src/wintun_device.rs` drives wintun directly. One dedicated thread loops on `receive_blocking` (it spins on the ring 5× before waiting) and feeds a bounded channel; writes go straight into the send ring.
+  - The adapter setup moved there too, minus the stray 0.0.0.0/0 route via 10.254.77.1 that `tun` used to add. The `tun` dependency was replaced by `wintun-bindings =0.7.40`.
+- **Each TCP flow was capped at 16 KB in flight** (ipstack defaults). New **patch 0006** (Windows-only, in `patch-deps.sh`) raises `max_unacked_bytes`/`read_buffer_size` to 65535. There is no window scaling in the SYN-ACK, so that is the ceiling.
+- **No MSS in the SYN-ACK:** Windows fell back to 536-byte uploads. Now `args.tcp_mss = Some(1440)` (MTU-60, safe for v4 and v6). The Apple builds also leave this unset; consider `--tcp-mss 1440` there.
+- **Virtual-DNS sessions held a `max_sessions` slot for 120 s each,** and Windows uses a new port per lookup, so browsing could exhaust the 1000 slots and new TCP connections were silently dropped. Patch 0006: 5 s idle limit per DNS session; DNS TTL 5 s → 300 s (mappings live 24 h since 0003).
+- **Nagle was on for the proxy socket.** Patch 0006 sets `set_nodelay(true)`.
+- **The traffic callback took 3 global mutexes on every relayed chunk** (only Windows registered it). It is no longer registered; the dashboard reads the adapter's own counters (`GetIfEntry2` octets) once a second. That also fixes rates alternating between 0 and 2× and out-of-order totals.
+- **Windows mDNS/LLMNR/NetBIOS/SSDP were relayed through the proxy.** New `src/packet_filter.rs` drops multicast, broadcast and link-local destinations between the device and the engine.
+
+**Connect time (~30 s measured in the VM)**
+- `src/routing.rs` was rewritten (with `src/netspec.rs` holding the testable helpers):
+  - **NRPT via registry** (`…\Dnscache\Parameters\DnsPolicyConfig\NetBridge-{GUID}`, same values OpenVPN writes), plus a Dnscache paramchange signal and `DnsFlushResolverCache`. PowerShell only as a fallback.
+  - **Routes, metric and the IPv6 address via IP Helper** instead of netsh.
+  - **`cleanup_stale` does one registry read** when there is nothing stale.
+  - No external processes on the normal connect path.
+
+**Correctness**
+- **The bypass route is checked every second.** Its loss (Wi-Fi drop, adapter reset) used to stall every new flow until two failed 20 s probes; now it triggers a restart.
+- **Network restarts repeat.** They are no longer once per session; they are spaced 30 s apart, and the spacing resets when the server answers.
+- **A failed automatic restart goes through the reconnect backoff** instead of ending up Disconnected for good.
+- The tick uses `MissedTickBehavior::Delay`: no bursts of catch-up ticks, so no rate spikes after a long connect.
+- **An engine panic is now reported** (supervisor task). A stuck engine is aborted after 3 s on stop, so the adapter's GUID is free for the next start.
+- **The pending-bypass record no longer round-trips through Credential Manager.** A transient read failure there could have deleted the saved password. config.json is written atomically.
+- **Tray Quit no longer freezes the UI thread** (the teardown runs off-thread).
+- **Headless mode:** arguments are parsed before the single-instance check, so a running GUI gives exit 3 rather than a modal dialog. A bad `--for` gives exit 2. It exits 1 when the connection has failed for good.
+- **Link-local IPv6 servers** get the physical interface as their scope ID.
+
+**Not done / open**
+- Connect and Disconnect still run inline in the controller loop, so commands queue during a connect. That matters less now that connect should take about a second.
+- Headless mode has no Ctrl+C/close handler. It's a GUI-subsystem exe, so none is delivered; the next launch cleans up.
+- Patch 0006, `--tcp-mss` and the NODATA fix (0005) are **not** in the iOS/macOS engine.
+- **Verify on Windows next:**
+  - connect time;
+  - that the registry NRPT rule plus paramchange actually steers DNS into the tunnel (an elevated admin, not SYSTEM, sends the paramchange; the fallback covers a refusal);
+  - throughput A/B against the old build (interleaved repeats);
+  - that the filter stops the multicast relays;
+  - that the dedicated reader exits cleanly on disconnect.
+
+## 2026-09-26 (night): Windows faster (measured in the VM), all Windows lessons carried to iOS/macOS
+
+Owner: "all phases but this is still about windows make windows better and faster", then "host your own test in windows vm". The work was done by 4 parallel agents on disjoint files, plus me for integration and the VM test.
+
+**New engine patches** (all in `LWIPTunnelEngine/patches/`; chain-checked: a fresh fc77ca3 checkout plus the chain equals the vendored tree)
+- `0006` split into:
+  - **0006a** (all platforms): TCP_NODELAY to the proxy, 5 s idle limit on virtual-DNS sessions, TTL 300;
+  - **0006b** (macOS and Windows only): 64 KB TCP window.
+- **0007a** (ipstack): per-packet log strings are built only when that log level is enabled.
+- **0007b** (tun2proxy): lock-free traffic accounting when no callback is registered.
+
+**Windows client**
+- A session counts as healthy only after a successful SOCKS probe; downlink bytes don't count, because virtual DNS alone produces them. The same fix went into the Mac client.
+- Connect and teardown run as sequenced background tasks, so Disconnect and Quit work mid-connect; a late session is stopped.
+- Buffered logging (64 KB, flushed at least once a second, immediately on ERROR); every exit path flushes.
+- 44 host tests.
+- Zips rebuilt:
+  - `NetBridge-win-arm64.zip` sha256 `2cd96ce8…aef`
+  - `NetBridge-win-x64.zip` sha256 `0504df5e…aea8`
+- **Not yet uploaded:** the GitHub release still carries the v1.0.0 zips.
+
+**Measured in the Tiny11 ARM64 VM**
+- Setup: headless ARM64 build, my own server `scripts/socks5_test_server.py` on the Mac (192.168.64.1:18099), 50 MB over HTTP from 10.0.0.177:18200.
+- Two interleaved rounds of direct, old (published v1.0.0) and new. All 12 tunnel downloads appear as `CONNECT 10.0.0.177:18200` in the server log.
+
+  | | round 1 | round 2 |
+  |---|---|---|
+  | connect, old | 22.1 s | 15.4 s |
+  | connect, **new** | **0.6 s** | **0.4 s** |
+  | 50 MB download, old (MB/s) | 31 / 36 / 16 | 31 / 34 / 43 |
+  | 50 MB download, **new** (MB/s) | 26 / 46 / 43 | 47 / 67 / 63 |
+  | direct, no tunnel (MB/s) | 58 / 106 / 219 | 62 / 200 / 276 |
+
+  - Download median about 32 → 46 MB/s. The ranges overlap, so the gain is real but modest in this VM.
+  - Direct is far faster, so the VM's NAT isn't the bottleneck; the engine path still is.
+- **New build, functional check:**
+  - The registry NRPT rule works: `example.com` → 198.18.0.4, and hostname HTTP, IP-literal TCP and UDP NTP all work.
+  - The tun crate's stray `0.0.0.0/0` route on the adapter is gone.
+  - The timed stop leaves no adapter, routes, bypass route or NRPT.
+  - **Multicast relays reaching the proxy: 0 during new-build runs** (128 from old-build runs over the same period).
+- Force-kill between runs, then the next launch: the stale state was cleaned up every time (runs succeeded back to back).
+
+**Apple engine**
+- New `scripts/build-tun2proxy-apple.sh` builds all three xcframework slices from source; it stages by default and installs with `--install`. Deployment targets are iOS 15 / macOS 14.
+- iOS gets 0001–0005, 0006a and 0007a/b plus ipstack 0002/0004. **So iOS now has 0004, ending the "iOS slices byte-identical" policy.** macOS also gets 0006b.
+- Installed. Old xcframework backup: `build/tun2proxy-apple/xcframework-backup-20260926-163330`.
+- sha1 of the new slices: ios `4a6ad27a…`, sim `1e0a1533…`, macos `342f92a5…`.
+- `swift test` 8/8; the 0004 regression test 4/4 on both trees.
+- `build-tun2proxy-macos.sh` is marked superseded, and the `Package.swift` comment is updated.
+
+**Apple Swift** (iOS and macOS build unsigned; IPA `1.0 (20260926.163540)` rebuilt; nothing run live)
+- `--tcp-mss 1440`.
+- `onEngineExit` fires once, including when the read loop loses the device.
+- **IPv6 servers are refused explicitly.** tun2proxy's CLI URL parser keeps the brackets on an IPv6 host; supporting it needs an engine patch.
+- **SOCKS5 probe:** greeting + auth + UDP ASSOCIATE, one 3 s deadline, now on iOS too.
+- **Cancel rule:** any probe may cancel after ≥2 failures plus a path change, once the server has answered this session. Cancels are spaced 30 s apart, and the spacing resets when the server answers.
+- The session ID is stamped on start errors. On iOS, an engine exit calls `cancelTunnelWithError`.
+- **Mac:**
+  - failed automatic starts are retried;
+  - "Sign-in refused" and "Reconnecting (n)" states;
+  - serial stats polling, with rates computed from the extension's `sampledAt`;
+  - new optional `TunnelStats` fields.
+- **Keychain:** `loadResult` distinguishes found / not found / error; `save` updates in place, then adds only on not-found; an unchanged or never-loaded password is not rewritten.
+- **The iOS Client form is filled in** from the saved configuration plus the Keychain.
+- **Owner decision pending:** iOS still has no automatic reconnect. Network-change and engine-exit cancels now leave the VPN off with the reason shown, instead of "Connected" with no traffic. Restarting inside the extension would make it recover on its own.
+
+**README:** documents the iOS Client tab, the macOS client and Windows. The false "no Network Extension" line is corrected, with the entitlement note.
+
+**Live tests still needed:**
+- **iPhone:** memory under load (the extension's ~50 MB limit), `udp_qa.py`, a Wi-Fi switch mid-session, and relay suspension. Every iOS engine change is new on the phone.
+- **Mac:** a Mac run with the VPN state proven first.
+- **Windows:** the x64 build on a real x64 PC.
+
+## 2026-09-26 (late night): IPv6 proxy servers (engine patch 0008), IN PROGRESS; GitHub upload not done
+
+Owner: "IPv6 servers are now refused … can we fix? have an agent upload to github". The approved plan is at `~/.claude/plans/optimized-launching-bear.md`. The owner interrupted before the live test, so the state below is a snapshot.
+
+**Why the engine needed a change:** tun2proxy's `ArgProxy::try_from` (`args.rs` ~420) resolves `url.host_str()`, which keeps the brackets for IPv6 (`"[::1]"`), so resolution fails. A bad `--proxy` makes clap `exit()` the Apple extension, and a link-local zone can't be expressed. The Apple C API only takes a CLI string. Windows builds `ArgProxy` directly, so it never had this problem.
+
+**The fix** (two background agents, launched ~17:55; their completion reports had **not** arrived when this was written):
+- **Engine agent:**
+  - `LWIPTunnelEngine/patches/0008-proxy-url-ipv6.patch` (the file now exists). It matches on `url.host()`: IPv6 → `SocketAddrV6`, plus an optional `?scope=<ifindex>` query for link-local; IPv4 and hostnames unchanged. It includes unit tests.
+  - Wired into `NetBridgeWindows/patch-deps.sh` and `scripts/build-tun2proxy-apple.sh`, with a chain check against the live vendor tree.
+  - Then `build-tun2proxy-apple.sh --install`.
+  - **Check next:** that the xcframework mtime is newer than 16:33:30 (it was **not** yet reinstalled when this was written); the new backup under `build/tun2proxy-apple/`; the chain check; `swift test`.
+- **Swift agent:**
+  - Remove the `TunnelEngine.canDial` IPv6 refusal and the `PacketTunnelProvider` IPv6-only guard.
+  - `proxyURL` emits `[ip]` plus `?scope=N` from `ServerAddress.scopeID`, via a static builder with XCTests.
+  - Then the iOS and macOS builds and `scripts/build-ipa.sh`.
+  - **Check next:** its report, `git diff` of `TunnelEngine.swift` / `PacketTunnelProvider.swift`, and the IPA version.
+
+**Done by me**
+- `scripts/socks5_test_server.py`:
+  - new `--bind` option (e.g. `::`);
+  - the UDP relay for IPv6 clients uses a dual-stack socket (`IPV6_V6ONLY=0`, v4-mapped destinations, replies unmapped);
+  - `encode_addr` strips zones and unmaps v4-mapped addresses.
+- Self-test over `[::1]:18098`: CONNECT 1.1.1.1:80 works, and UDP ASSOCIATE relayed DNS to 1.1.1.1 with a correct reply.
+- **Running on the Mac right now:**
+  - IPv4 test server `:18099` (pid 23937, log `…/scratchpad/socks.log`);
+  - IPv6 test server `[::]:18098` (log `…/scratchpad/socks6.log`);
+  - HTTP file server `:18200` serving `…/scratchpad/www/50M.bin`;
+  - also the older unrelated `/tmp/socks5server.py` on `:1080`, left alone.
+
+**NOT done yet**
+1. **Live IPv6 test of the Windows client in the Tiny11 VM.** It was about to run. The VM is on `fd55:335b:91db:9e8c::/64`, and the Mac's bridge100 address is `fd55:335b:91db:9e8c:90:cbf9:3c7b:169a`.
+   - Plan: `headless-new6.bat` → `socks5://nb:…@[<that addr>]:18098`, then check the /128 bypass route, traffic through the tunnel (the server log shows the VM's IPv6 peer) and disconnect cleanup.
+   - In a `.bat`, `%40` needs to be `%%40`.
+2. **Rebuild the Windows zips** after 0008 lands in the vendor tree (`scripts/build-windows.sh x64` and `arm64`). The current zips (`2cd96ce8…` arm64, `0504df5e…` x64) predate 0008. 0008 doesn't change Windows behaviour, since Windows builds `ArgProxy` directly, but the builds should match the patch chain.
+3. **GitHub upload by a subagent**, only after 1 and 2 pass:
+   - a new public release `windows-v1.1.0` on `Korporate1k/NetBridge`, with both zips, marked latest; v1.0.0 stays;
+   - notes: connect 0.4–0.6 s vs 15–22 s, a data-path median of ~46 vs ~32 MB/s in the VM, the DNS rule, the multicast filter, reliability fixes, IPv6 servers, ARM64 tested / x64 not, unsigned, SHA-256;
+   - no-reply author email only;
+   - verify by downloading the assets back.
+4. Apple IPv6 remains offline-verified only (no Mac or phone VPN connects without the owner).
+
+**VM state:** Tiny11 ARM64 is running in UTM (`NetBridge-Win11ARM`). `C:\NetBridge\new\` holds the latest ARM64 build (with all the Windows fixes, pre-0008) and `C:\NetBridge\old\` the v1.0.0 build. Helpers are in `~/VMs/`: `nbtest.ps1`, `nbrun.sh`, `perf.ps1`, `abtest.sh`, `headless-*.bat`. No NetBridge was running at the last check.
+
+## 2026-09-27: IPv6 proxy servers scrapped (patch 0008 removed)
+
+Owner: "scrap ip6 server", and chose to undo only the 0008 work. This supersedes the "IN PROGRESS" section above. Its live IPv6 test (item 1) is **cancelled**. Plan: `~/.claude/plans/scrap-ip6-server-reactive-sketch.md`.
+
+**What changed**
+- **Patch 0008 removed from the chain:**
+  - `LWIPTunnelEngine/patches/0008-proxy-url-ipv6.patch` deleted;
+  - `NetBridgeWindows/patch-deps.sh` and `scripts/build-tun2proxy-apple.sh` no longer apply it;
+  - the chain is now 0001–0007b.
+- **Windows vendor tree:** 0008 reversed out of `NetBridgeWindows/vendor/tun2proxy` (`patch -R`). Chain check: a fresh fc77ca3 checkout plus 0001–0007b is **identical** to `vendor/`.
+- **Apple engine:** no rebuild needed. The installed xcframework (16:33:30) never contained 0008.
+- **Swift, iOS and macOS refuse IPv6 servers again:**
+  - `TunnelEngine.canDial` refuses any host containing `:`.
+  - `proxyScopeID` and the `?scope=`/bracket handling in `proxyURL` are gone.
+  - `PacketTunnelProvider` fails the start with code 5: "IPv6 SOCKS5 servers are not supported … use the IPv4 address".
+  - The existing IPv6 route/probe plumbing is left in place and is unreachable behind the guard.
+- **Windows client:** unchanged. It keeps its own IPv6-server support (it builds `ArgProxy` directly), which has **never been tested live**.
+- **Kept:** `scripts/socks5_test_server.py --bind` (tooling only).
+
+**Verified (offline):** `swift test` 12/12; NetBridgeWindows `cargo test` 44/44; the iOS and macOS unsigned builds succeed; IPA rebuilt as `1.0 (20260927.021816)`, 26 MB, with no build-number change in the project file.
+
+**Still open**
+- **Windows zips:** built before 0008, so they still match the current chain; no rebuild needed.
+- **The `windows-v1.1.0` GitHub release is still pending.** Its notes must **not** claim IPv6 servers. The upload was planned to wait for a live VM check; with the IPv6 test cancelled, that means the existing IPv4 VM results.
+- **Test servers** from the previous session (`:18099`, `[::]:18098`, `:18200`) are no longer running.
