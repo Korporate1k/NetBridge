@@ -10,7 +10,7 @@ struct MacMenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                StatusBadge(status: model.tunnel.status)
+                StatusBadge(status: model.tunnel.status, reconnectAttempt: model.reconnectAttempt)
                     .font(.headline)
                 Spacer()
                 if model.tunnel.status == .connecting || model.tunnel.status == .disconnecting {
@@ -30,6 +30,12 @@ struct MacMenuBarView: View {
             if case .unreachable = model.proxyHealth {
                 Label("Connected, but the proxy isn't answering.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+                    .font(.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if case .authRejected = model.proxyHealth {
+                Label("Sign-in refused by the server.", systemImage: "person.crop.circle.badge.xmark")
+                    .foregroundStyle(.red)
                     .font(.footnote)
                     .fixedSize(horizontal: false, vertical: true)
             }

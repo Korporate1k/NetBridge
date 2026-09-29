@@ -64,7 +64,7 @@ struct MacClientView: View {
                     if model.tunnel.status == .connecting || model.tunnel.status == .disconnecting {
                         ProgressView().controlSize(.small)
                     }
-                    StatusBadge(status: model.tunnel.status)
+                    StatusBadge(status: model.tunnel.status, reconnectAttempt: model.reconnectAttempt)
                 }
             }
             .disabled(!model.canConnect)
@@ -82,6 +82,13 @@ struct MacClientView: View {
                 Label("Connected, but the proxy isn't answering — traffic is going nowhere.",
                       systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+                    .font(.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if case .authRejected = model.proxyHealth {
+                Label("Sign-in refused — the server rejected this username or password, so nothing gets through.",
+                      systemImage: "person.crop.circle.badge.xmark")
+                    .foregroundStyle(.red)
                     .font(.footnote)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -173,6 +180,8 @@ struct MacClientView: View {
 /// Coloured dot + label for the tunnel state.
 struct StatusBadge: View {
     let status: NEVPNStatus
+    /// Non-nil while an automatic reconnect is scheduled or starting.
+    var reconnectAttempt: Int? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -182,6 +191,9 @@ struct StatusBadge: View {
     }
 
     private var label: String {
+        if let attempt = reconnectAttempt, status != .connected {
+            return "Reconnecting (\(attempt))…"
+        }
         switch status {
         case .connected: return "Connected"
         case .connecting: return "Connecting…"
@@ -194,6 +206,7 @@ struct StatusBadge: View {
     }
 
     private var color: Color {
+        if reconnectAttempt != nil, status != .connected { return .orange }
         switch status {
         case .connected: return .green
         case .connecting, .reasserting, .disconnecting: return .orange

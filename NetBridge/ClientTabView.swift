@@ -27,6 +27,9 @@ struct ClientTabView: View {
     @State private var showingScanner = false
     /// Set when a scan arrives while a tunnel is running: restart it on the scanned server once it's down.
     @State private var reconnectAfterStop = false
+    /// The password this form was filled with from the Keychain (`nil` = never loaded, or the read failed). Passed
+    /// to `save` so an unchanged or never-loaded (empty) field does not overwrite the stored password.
+    @State private var loadedPassword: String?
 
     init(server: ProxyServer, config: ClientConfiguration, tunnelManager: ClientTunnelManager, showTester: Bool) {
         self.server = server
@@ -49,7 +52,9 @@ struct ClientTabView: View {
             .navigationTitle("Client")
             .keyboardDoneButton()
             .onAppear {
-                tunnelManager.loadOrCreate { _ in }
+                tunnelManager.loadOrCreate { _ in
+                    hydrateFromSavedConfiguration()
+                }
                 #if DEBUG
                 // QA_CLIENT_URI/QA_CLIENT_AUTOCONNECT now drive
                 // ClientTunnelManager directly from DashboardView.init() (see
@@ -192,9 +197,22 @@ struct ClientTabView: View {
         }
     }
 
+    /// Fills an empty form from what was last saved (NetworkExtension configuration + Keychain password), so a
+    /// relaunch shows the server this device actually connects to instead of blank fields. Never overwrites a
+    /// form the user (or a QA URI / scan) has already filled.
+    private func hydrateFromSavedConfiguration() {
+        guard config.host.isEmpty, let saved = tunnelManager.savedConfiguration() else { return }
+        config = saved.config
+        portText = String(saved.config.port)
+        loadedPassword = saved.password
+    }
+
     private func saveAndStart() {
-        tunnelManager.save(config) { result in
+        let attempted = config.password
+        tunnelManager.save(config, loadedPassword: loadedPassword) { result in
             if case .success = result {
+                // What the Keychain holds now (the save skips it when unchanged or never loaded and empty).
+                if !(loadedPassword == nil && attempted.isEmpty) { loadedPassword = attempted }
                 tunnelManager.start()
             }
         }

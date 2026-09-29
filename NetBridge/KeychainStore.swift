@@ -24,7 +24,63 @@ enum KeychainStore {
     /// runtime the resolved form is `<TeamID>.com.Korporate1k.LocalProxy.shared`.
     /// This environment has no Team ID configured at all, so call sites
     /// pass the literal `"com.Korporate1k.LocalProxy.shared"` for now.
-    static func save(_ data: Data, key: String, accessGroup: String? = nil) {
+    /// Outcome of a Keychain read. "Not found" and "the read failed" are different answers: treating a failed read
+    /// (locked keychain, missing entitlement, interaction not allowed) as "no value" is how a stored password gets
+    /// overwritten with an empty one.
+    enum LoadResult {
+        case found(Data)
+        case notFound
+        case failed(OSStatus)
+    }
+
+    /// Writes `data`, updating the existing item in place (`SecItemUpdate`) and adding it only when there is none
+    /// (`errSecItemNotFound`). The old delete-then-add lost the stored value whenever the add then failed.
+    /// Returns the final OSStatus (`errSecSuccess` on success); failures are logged.
+    @discardableResult
+    static func save(_ data: Data, key: String, accessGroup: String? = nil) -> OSStatus {
+        let query = baseQuery(key: key, accessGroup: accessGroup)
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var attributes = query
+            attributes[kSecValueData as String] = data
+            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(attributes as CFDictionary, nil)
+        }
+        if status != errSecSuccess {
+            DebugLog.important("keychain", "save \(key) failed OSStatus=\(status)")
+        }
+        return status
+    }
+
+    static func loadResult(key: String, accessGroup: String? = nil) -> LoadResult {
+        var query = baseQuery(key: key, accessGroup: accessGroup)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else {
+                DebugLog.important("keychain", "load \(key) returned no data")
+                return .failed(errSecDecode)
+            }
+            return .found(data)
+        case errSecItemNotFound:
+            return .notFound
+        default:
+            DebugLog.important("keychain", "load \(key) failed OSStatus=\(status)")
+            return .failed(status)
+        }
+    }
+
+    /// The stored value, or `nil` when there is none OR the read failed. Callers that would write back what they
+    /// read must use `loadResult` instead, so a failed read is not mistaken for "empty".
+    static func load(key: String, accessGroup: String? = nil) -> Data? {
+        if case .found(let data) = loadResult(key: key, accessGroup: accessGroup) { return data }
+        return nil
+    }
+
+    private static func baseQuery(key: String, accessGroup: String?) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -36,31 +92,6 @@ enum KeychainStore {
         #if os(macOS)
         query[kSecUseDataProtectionKeychain as String] = true
         #endif
-        SecItemDelete(query as CFDictionary)
-
-        var attributes = query
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(attributes as CFDictionary, nil)
-    }
-
-    static func load(key: String, accessGroup: String? = nil) -> Data? {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        if let accessGroup = accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
-        }
-        #if os(macOS)
-        query[kSecUseDataProtectionKeychain as String] = true
-        #endif
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+        return query
     }
 }

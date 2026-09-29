@@ -37,7 +37,10 @@ struct NetBridgeMacApp: App {
     }
 
     private var menuBarSymbol: String {
-        if case .unreachable = model.proxyHealth { return "exclamationmark.shield" }
+        switch model.proxyHealth {
+        case .unreachable, .authRejected: return "exclamationmark.shield"
+        default: break
+        }
         return model.tunnel.status == .connected ? "shield.lefthalf.filled" : "shield.slash"
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 @preconcurrency import NetworkExtension
+import Security
 
 /// Wraps `NETunnelProviderManager` to configure and control the
 /// `NetBridgeTunnel` Network Extension — the app-side half of the SOCKS5
@@ -37,6 +38,11 @@ final class ClientTunnelManager: ObservableObject {
 
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
+    /// Set by `stop()`, cleared by `start()`: a disconnect the user asked for carries no failure worth showing.
+    private var userRequestedStop = false
+    #if os(iOS)
+    private static let lastShownFailureKey = "client.lastShownFailureID"
+    #endif
 
     init() {
         statusObserver = NotificationCenter.default.addObserver(
@@ -55,7 +61,13 @@ final class ClientTunnelManager: ObservableObject {
                 // reconnect logic into starting our tunnel.
                 guard connection === self.manager?.connection else { return }
                 DebugLog.important("client", "VPN status -> \(status.rawValue) (\(String(describing: status)))")
+                let previous = self.status
                 self.status = status
+                #if os(iOS)
+                if status == .disconnected, previous != .disconnected, previous != .invalid, !self.userRequestedStop {
+                    self.showProviderFailure()
+                }
+                #endif
             }
         }
     }
@@ -99,9 +111,41 @@ final class ClientTunnelManager: ObservableObject {
         }
     }
 
+    /// The stored SOCKS5 password: the value, `""` when none is stored, or `nil` when the Keychain read FAILED
+    /// (so the caller knows it does not know, and must not write an empty field back over it).
+    static func loadStoredPassword() -> String? {
+        switch KeychainStore.loadResult(key: passwordKey, accessGroup: keychainAccessGroup) {
+        case .found(let data): return String(data: data, encoding: .utf8) ?? ""
+        case .notFound: return ""
+        case .failed: return nil
+        }
+    }
+
+    /// The configuration last saved to NetworkExtension (host/port/username) plus the Keychain password, for
+    /// filling a form. `nil` when nothing has been saved yet or `loadOrCreate` has not finished. The `password`
+    /// half is `nil` when the Keychain read failed; pass it back to `save(_:loadedPassword:)` unchanged.
+    func savedConfiguration() -> (config: ClientConfiguration, password: String?)? {
+        guard let proto = manager?.protocolConfiguration as? NETunnelProviderProtocol,
+              let stored = proto.providerConfiguration,
+              let host = stored["host"] as? String, !host.isEmpty
+        else { return nil }
+        let port = (stored["port"] as? NSNumber)?.uint16Value ?? 1080
+        let password = Self.loadStoredPassword()
+        let config = ClientConfiguration(host: host, port: port, username: stored["username"] as? String ?? "",
+                                         password: password ?? "")
+        return (config, password)
+    }
+
     /// Saves `config` as this device's SOCKS5 client server, creating the
     /// tunnel configuration if one doesn't exist yet.
-    func save(_ config: ClientConfiguration, completion: @escaping (Result<Void, Error>) -> Void) {
+    ///
+    /// `loadedPassword` is the password the caller's form was filled with from the Keychain (`nil` = the form never
+    /// loaded one, e.g. the read failed or the form was filled from elsewhere). The Keychain is written only when
+    /// the password actually changed, and never with an empty password the form did not load: an empty field is
+    /// then "unknown", not "cleared", and writing it would silently wipe the stored password.
+    func save(_ config: ClientConfiguration, loadedPassword: String?,
+              completion: @escaping (Result<Void, Error>) -> Void) {
+        let keychainError = persistPassword(config.password, loadedPassword: loadedPassword)
         let proto = NETunnelProviderProtocol()
         proto.providerBundleIdentifier = Self.providerBundleIdentifier
         proto.serverAddress = config.host
@@ -110,7 +154,6 @@ final class ClientTunnelManager: ObservableObject {
             "port": config.port,
             "username": config.username
         ]
-        KeychainStore.save(Data(config.password.utf8), key: Self.passwordKey, accessGroup: Self.keychainAccessGroup)
 
         let manager = self.manager ?? NETunnelProviderManager()
         self.manager = manager
@@ -139,13 +182,13 @@ final class ClientTunnelManager: ObservableObject {
                                 completion(.failure(loadError))
                             } else {
                                 self.status = manager.connection.status
-                                self.lastError = nil
+                                self.lastError = keychainError
                                 completion(.success(()))
                             }
                         }
                     }
                     #else
-                    self.lastError = nil
+                    self.lastError = keychainError
                     completion(.success(()))
                     #endif
                 }
@@ -153,26 +196,57 @@ final class ClientTunnelManager: ObservableObject {
         }
     }
 
+    /// Returns a message for the UI when the Keychain write failed, else nil.
+    private func persistPassword(_ password: String, loadedPassword: String?) -> String? {
+        if let loadedPassword, loadedPassword == password { return nil }  // unchanged
+        if loadedPassword == nil, password.isEmpty {
+            DebugLog.important("client", "password field empty and no stored password was loaded; leaving the Keychain untouched")
+            return nil
+        }
+        let status = KeychainStore.save(Data(password.utf8), key: Self.passwordKey, accessGroup: Self.keychainAccessGroup)
+        return status == errSecSuccess ? nil : "Couldn't save the password to the Keychain (OSStatus \(status))."
+    }
+
     func start() {
+        userRequestedStop = false
         guard let manager else {
             lastError = "No saved configuration to start — save one first."
             return
         }
         do {
             try manager.connection.startVPNTunnel()
-            lastError = nil
+            if lastError?.hasPrefix("Couldn't save the password") != true { lastError = nil }
         } catch {
             lastError = error.localizedDescription
         }
     }
 
     func stop() {
+        userRequestedStop = true
         manager?.connection.stopVPNTunnel()
     }
 
-    #if os(macOS)
-    /// When the current tunnel session came up, straight from NetworkExtension.
-    var connectedDate: Date? { manager?.connection.connectedDate }
+    #if os(iOS)
+    /// iOS has no auto-reconnect, so when our extension ends a session itself (engine died, lost the path to the
+    /// server after a network change, could not start) the least it owes the user is the reason. Only errors our
+    /// extension stamped with a session ID are shown, each once: `fetchLastDisconnectError` is documented only as
+    /// "the most recent error", so without the ID a stale one could be shown after a clean stop.
+    private func showProviderFailure() {
+        fetchLastDisconnectError { [weak self] error in
+            guard let error = error as NSError?, error.domain == "NetBridgeTunnel",
+                  let id = error.userInfo["sessionID"] as? String else { return }
+            let message = error.localizedDescription
+            Task { @MainActor in
+                guard let self, self.status == .disconnected else { return }
+                let defaults = UserDefaults.standard
+                guard defaults.string(forKey: Self.lastShownFailureKey) != id else { return }
+                defaults.set(id, forKey: Self.lastShownFailureKey)
+                DebugLog.important("client", "VPN ended by the extension: \(message)")
+                self.lastError = message
+            }
+        }
+    }
+    #endif
 
     /// The error that ended the last session, or `nil` if it ended cleanly (user / `scutil --nc stop`). A tunnel
     /// extension that dies on its own ("The VPN session failed because an internal error occurred") reports one.
@@ -183,6 +257,10 @@ final class ClientTunnelManager: ObservableObject {
         }
         manager.connection.fetchLastDisconnectError(completionHandler: completion)
     }
+
+    #if os(macOS)
+    /// When the current tunnel session came up, straight from NetworkExtension.
+    var connectedDate: Date? { manager?.connection.connectedDate }
 
     /// Asks the running packet-tunnel extension for its live counters
     /// (`PacketTunnelProvider.handleAppMessage`). `nil` if it isn't running.

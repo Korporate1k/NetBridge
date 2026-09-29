@@ -150,7 +150,8 @@ struct DashboardView: View {
             if let uri = ProcessInfo.processInfo.environment["QA_CLIENT_URI"],
                let parsed = ClientConfiguration(uriString: uri) {
                 clientTunnelManager.loadOrCreate { _ in
-                    clientTunnelManager.save(parsed) { result in
+                    // `loadedPassword: nil`: a QA URI without a password must not wipe the stored one.
+                    clientTunnelManager.save(parsed, loadedPassword: nil) { result in
                         if case .success = result, ProcessInfo.processInfo.environment["QA_CLIENT_AUTOCONNECT"] == "1" {
                             clientTunnelManager.start()
                         }

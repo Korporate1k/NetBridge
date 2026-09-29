@@ -22,39 +22,58 @@ import LWIPTunnelEngine
 /// it into — see `loadClientPassword()` (inlined via `Security` rather than
 /// sharing the app target's `KeychainStore`, which isn't compiled into this
 /// extension).
+///
+/// Health monitoring (SOCKS5 probe every 20 s and after path changes, network-change cancel, engine-exit cancel)
+/// runs on both iOS and macOS. Only the stats hand-off to the app (`TunnelCounters` / `handleAppMessage`) is
+/// macOS-only, because `TunnelStats` is compiled into the Mac targets only.
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: TunnelEngine?
     #if os(macOS)
     /// Live traffic counters for the Mac app's dashboard (see `handleAppMessage`).
     private let counters = TunnelCounters()
+    #endif
 
     /// The configured server, and the address it resolved to when this tunnel came up. That address is pinned into
-    /// `excludedRoutes` and cannot be changed without restarting the tunnel — see `checkServerAddress()`.
-    /// Written once in `startTunnel` before the monitor starts, then owned by `pathQueue`.
+    /// `excludedRoutes` and cannot be changed without restarting the tunnel — see `runProbe`.
+    /// Written once in `startTunnel` before monitoring starts, then only read.
     private var serverHost: String?
     private var serverPort: UInt16 = 0
-    private var excludedServerIP: String?
+    private var pinnedServer: ServerAddress?
+    /// Credentials for the probe (the same ones the engine uses). Written once in `startTunnel`.
+    private var probeUsername = ""
+    private var probePassword = ""
+
     private var pathMonitor: NWPathMonitor?
+    /// Owned by `pathQueue`.
     private var pathCheckWork: DispatchWorkItem?
+    private var lastPathFingerprint: String?
     private let pathQueue = DispatchQueue(label: "com.Korporate1k.LocalProxy.Tunnel.path")
     /// Probes block for up to 3 s, so they get their own serial queue: `pathQueue` is where `NWPathMonitor`
     /// delivers updates, and blocking that would back up path changes behind a probe.
     private let probeQueue = DispatchQueue(label: "com.Korporate1k.LocalProxy.Tunnel.probe")
     private var reachabilityTimer: DispatchSourceTimer?
-    /// All of these are read and written only on `pathQueue` (after `startTunnel` seeds the first three).
-    /// `stopping` is the exception — `stopTunnel` sets it, so it is guarded by `pathStateLock`.
+    /// All of these are read and written only on `probeQueue`.
     private var serverWasReachable = false
     private var consecutiveUnreachable = 0
-    private var didCancelForPath = false
-    /// Mirror of what was last reported to the app, so a repeated verdict is not logged every 20 s.
-    private var serverReachable: Bool?
+    /// A physical path change was seen since the last probe the server answered (or since start).
+    private var pathChangedSinceSuccess = false
+    /// Mirror of what was last logged, so a repeated verdict is not logged every 20 s.
+    private var lastVerdict: String?
+    /// `stopping` is set by `stopTunnel` and by our own cancels, from any queue, so it is guarded by `pathStateLock`.
     private let pathStateLock = NSLock()
     private var stopping = false
-    /// Identifies this tunnel session in the errors we hand to `cancelTunnelWithError`, so the app can tell one
-    /// of our failures from a stale one. `fetchLastDisconnectError` is documented only as "the most recent error"
-    /// — it makes no promise of being cleared or scoped to the session that just ended.
+    /// Identifies this tunnel session in the errors we hand to `cancelTunnelWithError` and to `startTunnel`'s
+    /// completion, so the app can tell one of our failures from a stale one. `fetchLastDisconnectError` is
+    /// documented only as "the most recent error" — it makes no promise of being cleared or scoped to the session
+    /// that just ended.
     private let sessionID = UUID().uuidString
-    #endif
+
+    private static let probeInterval: DispatchTimeInterval = .seconds(20)
+    private static let probeTimeout: TimeInterval = 3
+    /// Minimum spacing between two network-change cancels (same value as the Windows client's
+    /// `NETWORK_RESTART_BACKOFF`). Cleared as soon as the server answers again.
+    private static let networkCancelSpacing: TimeInterval = 30
+    private static let lastNetworkCancelKey = "tunnel.lastNetworkCancelEpoch"
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         guard let proto = protocolConfiguration as? NETunnelProviderProtocol,
@@ -62,7 +81,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
               let host = config["host"] as? String,
               let portNumber = config["port"] as? NSNumber
         else {
-            completionHandler(NSError(domain: "NetBridgeTunnel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing server configuration"]))
+            completionHandler(sessionError(code: 1, "Missing server configuration"))
             return
         }
         let port = portNumber.uint16Value
@@ -71,43 +90,56 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let authConfigured = !username.isEmpty && !password.isEmpty
         tunnelLog.log("startTunnel host=\(host, privacy: .public) port=\(port, privacy: .public) authConfigured=\(authConfigured, privacy: .public)")
 
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: host)
-        let ipv4 = NEIPv4Settings(addresses: [TunnelEngine.tunnelLocalAddress], subnetMasks: ["255.255.255.0"])
-        ipv4.includedRoutes = [NEIPv4Route.default()]
         // The engine's own TCP/UDP connection to the SOCKS5 server must NOT be
         // routed back through the tunnel, or it loops: the tunnel captures the
         // engine's connect() to the server, feeds it back into the engine,
         // which dials the server again, and so on — the device can never get
-        // out. Exclude the server's address (resolved to a /32) so that one
+        // out. Exclude the server's address (a /32 or /128) so that one
         // connection goes over the physical interface directly. (Potatso
         // avoided this by dialing a *local* 127.0.0.1 proxy; we dial a remote
         // server, so the exclusion is required.)
         // Refuse to start rather than come up without the exclusion. A tunnel whose excluded route is missing
         // sends the engine's own connection to the proxy back through itself — the loop described above — and
         // still reports Connected while carrying nothing. Failing here surfaces it so the app can retry.
-        guard let serverIP = Self.resolveIPv4(host) else {
+        // Resolved here, with the tunnel down, so DNS is the real one (see `runProbe`).
+        guard let server = ServerAddress.resolve(host) else {
             tunnelLog.error("could not resolve \(host, privacy: .public); refusing to start without an excluded route")
-            completionHandler(NSError(domain: "NetBridgeTunnel", code: 4, userInfo: [
-                NSLocalizedDescriptionKey: "Could not resolve the SOCKS5 server address \"\(host)\"."
-            ]))
+            completionHandler(sessionError(code: 4, "Could not resolve the SOCKS5 server address \"\(host)\"."))
             return
         }
-        ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: serverIP, subnetMask: "255.255.255.255")]
-        Self.debugLog("excluded route for server \(serverIP)")
-        #if os(macOS)
-        excludedServerIP = serverIP
-        #endif
-        #if os(macOS)
-        serverHost = host
-        serverPort = port
-        #endif
-        settings.ipv4Settings = ipv4
+        // IPv6 proxy servers are not supported: the engine's --proxy parser cannot take an IPv6 host, and a failed
+        // parse would exit() the whole extension (see `TunnelEngine.canDial`). IPv4 is preferred by `resolve`, so
+        // only an IPv6 literal or an IPv6-only name lands here; fail cleanly with a reason the app can show.
+        guard TunnelEngine.canDial(host: server.ip) else {
+            tunnelLog.error("server \(host, privacy: .public) resolved to IPv6 \(server.display, privacy: .public); IPv6 servers are not supported")
+            completionHandler(sessionError(code: 5, "IPv6 SOCKS5 servers are not supported (\"\(host)\" resolved to \(server.display)). Use the server's IPv4 address or a name with an IPv4 address."))
+            return
+        }
+
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: server.ip)
+        let ipv4 = NEIPv4Settings(addresses: [TunnelEngine.tunnelLocalAddress], subnetMasks: ["255.255.255.0"])
+        ipv4.includedRoutes = [NEIPv4Route.default()]
         // Capture IPv6 too — otherwise it goes straight out the physical
         // interface, bypassing the proxy. tun2proxy relays IPv6 like IPv4
         // (the old BadVPN core was IPv4-only, which is why this used to be
         // left uncaptured).
         let ipv6 = NEIPv6Settings(addresses: [TunnelEngine.tunnelLocalAddressV6], networkPrefixLengths: [64])
         ipv6.includedRoutes = [NEIPv6Route.default()]
+        if server.isIPv6 {
+            // Unreachable while IPv6 servers are refused by the `canDial` guard above; kept so the route is right
+            // if the engine ever gains IPv6 --proxy support. The route has no zone field; the probe's sockaddr
+            // carries a link-local scope itself.
+            ipv6.excludedRoutes = [NEIPv6Route(destinationAddress: server.ip, networkPrefixLength: 128)]
+        } else {
+            ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: server.ip, subnetMask: "255.255.255.255")]
+        }
+        Self.debugLog("excluded route for server \(server.display)")
+        serverHost = host
+        serverPort = port
+        pinnedServer = server
+        probeUsername = username
+        probePassword = password
+        settings.ipv4Settings = ipv4
         settings.ipv6Settings = ipv6
         settings.dnsSettings = NEDNSSettings(servers: ["8.8.8.8", "8.8.4.4"])
         settings.mtu = 1500
@@ -116,13 +148,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self else { return }
             if let error {
                 tunnelLog.error("setTunnelNetworkSettings failed host=\(host, privacy: .public) error=\(String(describing: error), privacy: .public)")
-                completionHandler(error)
+                completionHandler(self.sessionError(code: 6, "Could not apply the tunnel's network settings: \(error.localizedDescription)",
+                                                    underlying: error))
                 return
             }
             tunnelLog.log("tunnel network settings applied ipv4=\(TunnelEngine.tunnelLocalAddress, privacy: .public) dns=8.8.8.8,8.8.4.4")
-            // Dial the pinned IPv4 literal, not the hostname: a name with an AAAA record could send the engine
-            // over IPv6, which has no excluded route (it loops) and would reach the phone under a different device key.
-            self.startEngine(proxyHost: serverIP, proxyPort: port, username: username, password: password,
+            // Dial the pinned literal, not the hostname: a name with an AAAA record could send the engine over an
+            // address that has no excluded route (it loops) and would reach the phone under a different device key.
+            self.startEngine(server: server, proxyPort: port, username: username, password: password,
                              verbosity: config["verbosity"] as? String ?? TunnelEngine.defaultVerbosity)
             completionHandler(nil)
         }
@@ -133,23 +166,31 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryTimer?.cancel()
         #if os(macOS)
         statsTimer?.cancel()
-        reachabilityTimer?.cancel()
-        // Set first: a path update already in flight on pathQueue can install a new work item after the cancel
-        // below, and that item would otherwise run a blocking probe against a torn-down session.
-        pathStateLock.lock()
-        stopping = true
-        pathStateLock.unlock()
-        pathMonitor?.cancel()
-        pathMonitor = nil
-        // pathCheckWork belongs to pathQueue; mutating it from this queue would be an ARC race.
-        pathQueue.async { [self] in
-            pathCheckWork?.cancel()
-            pathCheckWork = nil
-        }
         #endif
+        stopMonitoring()
         engine?.stop()
         engine = nil
         completionHandler()
+    }
+
+    /// An error carrying this session's ID, for `startTunnel`'s completion and for `cancelTunnelWithError`.
+    private func sessionError(code: Int, _ message: String, underlying: Error? = nil) -> NSError {
+        var info: [String: Any] = [NSLocalizedDescriptionKey: message, "sessionID": sessionID]
+        if let underlying { info[NSUnderlyingErrorKey] = underlying }
+        return NSError(domain: "NetBridgeTunnel", code: code, userInfo: info)
+    }
+
+    /// Ends the session with one of our own errors. Marks the provider as stopping first, so no probe or path
+    /// check runs (or cancels a second time) against a session that is going away.
+    private func failSession(code: Int, _ message: String) {
+        pathStateLock.lock()
+        let alreadyStopping = stopping
+        stopping = true
+        pathStateLock.unlock()
+        guard !alreadyStopping else { return }
+        tunnelLog.error("cancelling tunnel: \(message, privacy: .public)")
+        Self.debugLog("cancelling tunnel (code \(code)): \(message)")
+        cancelTunnelWithError(sessionError(code: code, message))
     }
 
     #if os(macOS)
@@ -212,45 +253,25 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         #endif
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            // Not "no password": the read itself failed. The engine will go without credentials, and a server that
+            // requires them will show up as "Sign-in refused" in the probe.
+            tunnelLog.error("keychain read of client password failed OSStatus=\(status, privacy: .public)")
+            debugLog("keychain read of client password failed OSStatus=\(status)")
+        }
         guard status == errSecSuccess, let data = result as? Data else { return "" }
         return String(data: data, encoding: .utf8) ?? ""
-    }
-
-    /// Resolves the configured server `host` to an IPv4 literal for the
-    /// tunnel's `excludedRoutes` (the engine's own connection to the server
-    /// must bypass the tunnel). Returns `nil` if it's neither an IPv4 literal
-    /// nor resolvable to one.
-    private static func resolveIPv4(_ host: String) -> String? {
-        // Fast path: already an IPv4 literal.
-        var addr = in_addr()
-        if inet_pton(AF_INET, host, &addr) == 1 {
-            return host
-        }
-        // Slow path: hostname → getaddrinfo (runs before the tunnel is up, so
-        // it uses the device's normal DNS).
-        var hints = addrinfo()
-        hints.ai_family = AF_INET
-        hints.ai_socktype = SOCK_STREAM
-        var res: UnsafeMutablePointer<addrinfo>?
-        guard getaddrinfo(host, nil, &hints, &res) == 0, let res else { return nil }
-        defer { freeaddrinfo(res) }
-        guard let sa = res.pointee.ai_addr else { return nil }
-        let sin = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
-        var sinAddr = sin.sin_addr
-        var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-        guard let ip = inet_ntop(AF_INET, &sinAddr, &buf, socklen_t(INET_ADDRSTRLEN)) else { return nil }
-        return String(cString: ip)
     }
 
     private var inboundCount = 0
     private var outboundCount = 0
 
-    private func startEngine(proxyHost: String, proxyPort: UInt16, username: String, password: String, verbosity: String) {
-        let engine = TunnelEngine(proxyHost: proxyHost, proxyPort: proxyPort, username: username, password: password,
-                                  verbosity: verbosity)
+    private func startEngine(server: ServerAddress, proxyPort: UInt16, username: String, password: String, verbosity: String) {
+        let engine = TunnelEngine(proxyHost: server.ip, proxyPort: proxyPort,
+                                  username: username, password: password, verbosity: verbosity)
         self.engine = engine
         engine.logHandler = { Self.debugLog($0) }
-        Self.debugLog("startEngine proxy=\(proxyHost):\(proxyPort) auth=\(!username.isEmpty) verbosity=\(verbosity)")
+        Self.debugLog("startEngine proxy=\(server.ip):\(proxyPort) auth=\(!username.isEmpty) verbosity=\(verbosity)")
 
         engine.onPacketsToWrite = { [weak self] packets, families in
             guard let self else { return }
@@ -266,24 +287,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.packetFlow.writePackets(packets, withProtocols: families.map { NSNumber(value: $0) })
         }
 
-        #if os(macOS)
-        // The engine ended without stopTunnel() asking it to. tun2proxy force-exits this process ~2 s later, so
-        // report a real error to NetworkExtension while we still can; the Mac app reconnects on a disconnect that
-        // carries one.
-        //
-        // macOS only, deliberately. On iOS nothing reconnects — there are no on-demand rules and no equivalent of
-        // MacClientModel's retry — and letting the process die on its own leaves NetworkExtension free to relaunch
-        // the provider. Ending the session explicitly there would turn a recoverable crash into a tunnel that
-        // stays down in the user's pocket.
-        engine.onEngineExit = { [weak self] rc in
-            guard let self else { return }
-            Self.debugLog("engine exited unexpectedly rc=\(rc), cancelling tunnel")
-            self.cancelTunnelWithError(NSError(domain: "NetBridgeTunnel", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "Tunnel engine stopped unexpectedly (rc=\(rc))",
-                "sessionID": self.sessionID
-            ]))
+        // The engine ended (or lost its packet device) without stopTunnel() asking it to. tun2proxy force-exits
+        // this process ~2 s after the engine returns, so report a real error to NetworkExtension while we still
+        // can. On macOS the app reconnects on a disconnect that carries one of our session IDs. On iOS nothing
+        // reconnects automatically, but a tunnel left "Connected" with a dead engine black-holes every packet with
+        // no visible sign; ending the session makes the failure visible in Settings and in the Client tab (which
+        // shows this error) instead.
+        engine.onEngineExit = { [weak self] exit in
+            self?.failSession(code: 2, "The tunnel stopped unexpectedly: \(exit).")
         }
-        #endif
 
         #if os(macOS)
         counters.markConnected()
@@ -293,56 +305,86 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         startMemoryLogging()
         #if os(macOS)
         startStatsLogging()
-        startPathMonitor()
         #endif
+        startMonitoring()
     }
 
-    #if os(macOS)
+    // MARK: - Health monitoring (iOS and macOS)
+
     /// The excluded route pinned in `startTunnel` is only right for the address the server had at that moment.
-    /// Across sessions this Mac has reached its relay at 172.20.10.1 (phone hotspot), 10.0.0.129 (home LAN) and
+    /// Across sessions the Mac has reached its relay at 172.20.10.1 (phone hotspot), 10.0.0.129 (home LAN) and
     /// once at a 169.254 link-local address, so it does move. NetworkExtension gives no callback for "the address
     /// behind your excluded route changed", and the failure is silent — the tunnel still reports Connected while
-    /// nothing gets through — so watch for path changes and check.
-    private func startPathMonitor() {
+    /// nothing gets through — so watch for path changes and probe.
+    ///
+    /// A path change is not the only way to lose the proxy, and not even the common one: the relay app on the phone
+    /// can be suspended, or the phone can walk away, with no network change here at all. Nothing in the stack
+    /// notices — NE stays Connected and the engine keeps running — so also poll every 20 s.
+    private func startMonitoring() {
         guard pathMonitor == nil else { return }
-        let monitor = NWPathMonitor()
+        // Physical interfaces only: our own utun is type `.other`, and its appearance must not count as a change.
+        let monitor = NWPathMonitor(prohibitedInterfaceTypes: [.other, .loopback])
         pathMonitor = monitor
         monitor.pathUpdateHandler = { [weak self] path in
-            guard let self else { return }
-            Self.debugLog("path update status=\(path.status) interfaces=\(path.availableInterfaces.map(\.name).joined(separator: ","))")
-            self.schedulePathCheck()
+            self?.pathUpdated(path)
         }
         monitor.start(queue: pathQueue)
-        startReachabilityPolling()
-    }
 
-    /// A path change is not the only way to lose the proxy, and not even the common one: the relay app on the phone
-    /// can be suspended, or the phone can walk away, with no network change on this Mac at all. Nothing in the
-    /// stack notices — NE stays Connected and the engine keeps running — so poll, and report the verdict to the
-    /// app through `TunnelStats.serverReachable`.
-    private func startReachabilityPolling() {
         let timer = DispatchSource.makeTimerSource(queue: probeQueue)
-        timer.schedule(deadline: .now() + 5, repeating: .seconds(20))
-        // Polls only report; they never tear the tunnel down. Acting on a bad poll would mean cancelling sessions
-        // whenever the relay is merely off, which churns without fixing anything.
-        timer.setEventHandler { [weak self] in self?.probeServer(mayCancelTunnel: false) }
+        timer.schedule(deadline: .now() + 5, repeating: Self.probeInterval)
+        timer.setEventHandler { [weak self] in self?.runProbe(trigger: "timer") }
         reachabilityTimer = timer
         timer.resume()
     }
 
-    /// One Wi-Fi change emits several path updates in a row, so settle first.
-    private func schedulePathCheck() {
+    private func stopMonitoring() {
+        // Set first: a path update already in flight on pathQueue can install a new work item after the cancel
+        // below, and that item would otherwise run a blocking probe against a torn-down session.
+        pathStateLock.lock()
+        stopping = true
+        pathStateLock.unlock()
+        reachabilityTimer?.cancel()
+        reachabilityTimer = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        // pathCheckWork belongs to pathQueue; mutating it from this queue would be an ARC race.
+        pathQueue.async { [self] in
+            pathCheckWork?.cancel()
+            pathCheckWork = nil
+        }
+    }
+
+    /// Runs on `pathQueue`. `NWPathMonitor` fires once immediately on start and then on every change, often several
+    /// times for one Wi-Fi switch, and sometimes for things that are not a change at all. Only a different set of
+    /// physical interfaces / gateways / status counts; then probe after the updates settle.
+    private func pathUpdated(_ path: Network.NWPath) {
+        let interfaces = path.availableInterfaces.map { "\($0.name)#\($0.index)" }.sorted().joined(separator: ",")
+        let gateways = path.gateways.map { "\($0)" }.sorted().joined(separator: ",")
+        let fingerprint = "\(path.status)|\(interfaces)|\(gateways)"
+        let previous = lastPathFingerprint
+        lastPathFingerprint = fingerprint
+        guard let previous, previous != fingerprint else {
+            if previous == nil { Self.debugLog("path baseline \(fingerprint)") }
+            return
+        }
+        Self.debugLog("path changed \(previous) -> \(fingerprint)")
+        // Enqueued now, so it lands on probeQueue before the settled probe below.
+        probeQueue.async { [weak self] in self?.pathChangedSinceSuccess = true }
         pathCheckWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.probeQueue.async { self.probeServer(mayCancelTunnel: true) }
+            self.probeQueue.async { self.runProbe(trigger: "path change") }
         }
         pathCheckWork = work
         pathQueue.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
     /// Runs on `probeQueue` (serial, so probes never overlap), and owns `serverWasReachable`,
-    /// `consecutiveUnreachable` and `didCancelForPath`.
+    /// `consecutiveUnreachable`, `pathChangedSinceSuccess` and `lastVerdict`.
+    ///
+    /// The probe is a real SOCKS5 greeting (+ RFC 1929 sign-in when a username is set) followed by a UDP ASSOCIATE,
+    /// all under one 3 s deadline. A TCP connect is not enough: a suspended iOS relay keeps accepting TCP but never
+    /// answers SOCKS5, so a connect-only probe calls a dead server healthy.
     ///
     /// Deliberately does NOT re-resolve the host. While this tunnel is up, a DNS query from this process goes
     /// *through* the tunnel (that is the whole reason `excludedRoutes` exists), and the engine runs with
@@ -352,37 +394,79 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// name on the way out.
     ///
     /// So brokenness is detected without DNS: probe the address actually pinned into `excludedRoutes`, which by
-    /// construction routes over the physical interface. When it stops answering, cancel once and let the app
-    /// reconnect — `startTunnel` then re-resolves with the tunnel *down*, where DNS is trustworthy, and pins
-    /// whatever the correct address is now. That covers both a hostname whose address moved and a literal IP
+    /// construction routes over the physical interface. When it stops answering after a network change, cancel and
+    /// let the app reconnect — `startTunnel` then re-resolves with the tunnel *down*, where DNS is trustworthy, and
+    /// pins whatever the correct address is now. That covers both a hostname whose address moved and a literal IP
     /// that belongs to a network we have left.
-    private func probeServer(mayCancelTunnel: Bool) {
-        guard !isStopping, let pinned = excludedServerIP, serverPort != 0 else { return }
-        let host = serverHost ?? pinned
+    private func runProbe(trigger: String) {
+        guard !isStopping, let server = pinnedServer, serverPort != 0 else { return }
+        let host = serverHost ?? server.display
+        let result = Socks5Probe.probe(server, port: serverPort, username: probeUsername, password: probePassword,
+                                       timeout: Self.probeTimeout)
+        guard !isStopping else { return }
 
-        if Self.canReachServer(ip: pinned, port: serverPort, timeout: 3) {
-            if serverReachable != true { Self.debugLog("probe: server \(host) at \(pinned) reachable") }
-            counters.setServerReachable(true)
+        switch result {
+        case .answering(let udp):
+            logVerdict("answering udp=\(udp)", "probe (\(trigger)): server \(host) at \(server.display) answering SOCKS5, UDP \(udp ? "relayed" : "refused")")
+            report(reachable: true, udp: udp, authRejected: false)
             serverWasReachable = true
             consecutiveUnreachable = 0
+            pathChangedSinceSuccess = false
+            Self.clearNetworkCancel()
+
+        case .authRejected(let why):
+            logVerdict("auth", "probe (\(trigger)): server \(host) at \(server.display) refused sign-in: \(why)")
+            report(reachable: true, udp: nil, authRejected: true)
+            consecutiveUnreachable = 0
+
+        case .notAnswering(let why):
+            report(reachable: false, udp: nil, authRejected: false)
+            consecutiveUnreachable += 1
+            lastVerdict = "down"
+            Self.debugLog("probe (\(trigger)): server \(host) at \(server.display) NOT ANSWERING (\(why); \(consecutiveUnreachable) in a row, wasReachable=\(serverWasReachable), pathChanged=\(pathChangedSinceSuccess)) — tunnel still reports connected")
+            maybeCancelForNetworkChange(server: server)
+            // After a path change, confirm quickly instead of waiting a full poll interval for the second failure.
+            if trigger == "path change", consecutiveUnreachable == 1 {
+                probeQueue.asyncAfter(deadline: .now() + 5) { [weak self] in self?.runProbe(trigger: "path follow-up") }
+            }
+        }
+    }
+
+    /// Any probe (timer or path) may cancel, but only when all of these hold — the same guards as the Windows
+    /// client: the server answered earlier this session (otherwise the address is simply wrong or the relay is
+    /// off, and restarting churns without fixing anything), it has now failed at least twice running, the physical
+    /// path changed since it last answered (a relay that is merely switched off is not our routes' fault), and the
+    /// last such cancel is at least 30 s old. That spacing is persisted (a new session may run in a new process)
+    /// and cleared as soon as the server answers, so a second network change later in the day recovers too.
+    private func maybeCancelForNetworkChange(server: ServerAddress) {
+        guard serverWasReachable, consecutiveUnreachable >= 2, pathChangedSinceSuccess else { return }
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.double(forKey: Self.lastNetworkCancelKey)
+        if last > 0, now - last < Self.networkCancelSpacing, now >= last {
+            Self.debugLog("probe: network-change cancel suppressed, last one was \(Int(now - last))s ago")
             return
         }
+        UserDefaults.standard.set(now, forKey: Self.lastNetworkCancelKey)
+        failSession(code: 3, "Lost the path to the SOCKS5 server at \(server.display) after a network change. Reconnecting to rebuild the tunnel's routes.")
+    }
 
-        counters.setServerReachable(false)
-        consecutiveUnreachable += 1
-        Self.debugLog("probe: server \(host) at \(pinned) UNREACHABLE (\(consecutiveUnreachable) in a row, wasReachable=\(serverWasReachable)) — tunnel still reports connected")
+    private static func clearNetworkCancel() {
+        if UserDefaults.standard.object(forKey: lastNetworkCancelKey) != nil {
+            UserDefaults.standard.removeObject(forKey: lastNetworkCancelKey)
+        }
+    }
 
-        // Only a path change may act on this, and only for a server this session had already reached: if it was
-        // never reachable the address is simply wrong or the relay is off, and restarting would churn without
-        // fixing anything. One cancel per session, so a reconnect landing in the same broken state cannot loop.
-        guard mayCancelTunnel, serverWasReachable, consecutiveUnreachable >= 2, !didCancelForPath else { return }
-        didCancelForPath = true
-        tunnelLog.error("server \(pinned, privacy: .public) stopped answering after a network change; cancelling so routes are rebuilt")
-        Self.debugLog("probe: cancelling tunnel so the app reconnects and re-resolves \(host) with the tunnel down")
-        cancelTunnelWithError(NSError(domain: "NetBridgeTunnel", code: 3, userInfo: [
-            NSLocalizedDescriptionKey: "Lost the path to the SOCKS5 server at \(pinned) after a network change. Reconnecting to rebuild the tunnel's routes.",
-            "sessionID": sessionID
-        ]))
+    /// Logs only when the verdict changes. `probeQueue` only.
+    private func logVerdict(_ key: String, _ message: String) {
+        guard lastVerdict != key else { return }
+        lastVerdict = key
+        Self.debugLog(message)
+    }
+
+    private func report(reachable: Bool, udp: Bool?, authRejected: Bool) {
+        #if os(macOS)
+        counters.setProbe(reachable: reachable, udp: udp, authRejected: authRejected)
+        #endif
     }
 
     private var isStopping: Bool {
@@ -390,39 +474,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         defer { pathStateLock.unlock() }
         return stopping
     }
-
-    /// Blocking TCP connect with a timeout, used only as a reachability probe. Goes out over the physical
-    /// interface because `pinned` is exactly the address `excludedRoutes` covers.
-    private static func canReachServer(ip: String, port: UInt16, timeout: Int32) -> Bool {
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = port.bigEndian
-        guard inet_pton(AF_INET, ip, &addr.sin_addr) == 1 else { return false }
-
-        // Non-blocking connect + poll, so a black-holed address cannot park this queue for the system's full
-        // TCP timeout.
-        let flags = fcntl(fd, F_GETFL, 0)
-        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-        let rc = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        if rc == 0 { return true }
-        guard errno == EINPROGRESS else { return false }
-
-        var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
-        guard poll(&pfd, 1, timeout * 1000) == 1 else { return false }
-        var soError: Int32 = 0
-        var len = socklen_t(MemoryLayout<Int32>.size)
-        guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &soError, &len) == 0 else { return false }
-        return soError == 0
-    }
-    #endif
 
     private func readPackets() {
         packetFlow.readPackets { [weak self] packets, protocols in
@@ -540,6 +591,8 @@ private final class TunnelCounters {
     private var connectedSince: Double = 0
     private var serverReachable: Bool?
     private var lastProbe: Double = 0
+    private var udpRelayed: Bool?
+    private var authRejected: Bool?
 
     func addUp(_ bytes: Int) {
         lock.lock(); up += bytes; pktUp += 1; lock.unlock()
@@ -553,10 +606,12 @@ private final class TunnelCounters {
         lock.lock(); connectedSince = Date().timeIntervalSince1970; lock.unlock()
     }
 
-    /// Result of the latest reachability probe (see `PacketTunnelProvider.probeServer`).
-    func setServerReachable(_ reachable: Bool) {
+    /// Result of the latest SOCKS5 probe (see `PacketTunnelProvider.runProbe`).
+    func setProbe(reachable: Bool, udp: Bool?, authRejected: Bool) {
         lock.lock()
         serverReachable = reachable
+        udpRelayed = udp
+        self.authRejected = authRejected
         lastProbe = Date().timeIntervalSince1970
         lock.unlock()
     }
@@ -565,10 +620,312 @@ private final class TunnelCounters {
         lock.lock(); defer { lock.unlock() }
         return TunnelStats(up: up, down: down, pktUp: pktUp, pktDown: pktDown,
                            footprintMB: footprintMB, connectedSince: connectedSince,
-                           serverReachable: serverReachable, lastProbe: lastProbe)
+                           serverReachable: serverReachable, lastProbe: lastProbe,
+                           udpRelayed: udpRelayed, authRejected: authRejected,
+                           sampledAt: ProcessInfo.processInfo.systemUptime,
+                           sampledAtEpoch: Date().timeIntervalSince1970)
     }
 }
 #endif
+
+// MARK: - Server address + SOCKS5 probe (BEGIN self-contained: Foundation + Darwin only)
+
+/// The server address pinned for one tunnel session: a numeric IP (no zone text) plus, for IPv6, its scope.
+struct ServerAddress: Equatable {
+    let ip: String
+    let isIPv6: Bool
+    /// IPv6 interface index; non-zero only for a link-local (fe80::/10) address.
+    let scopeID: UInt32
+
+    /// For logs and messages: `fe80::1%en0` style when scoped.
+    var display: String {
+        guard isIPv6, scopeID != 0 else { return ip }
+        var name = [CChar](repeating: 0, count: Int(IF_NAMESIZE) + 1)
+        if if_indextoname(scopeID, &name) != nil { return "\(ip)%\(String(cString: name))" }
+        return "\(ip)%\(scopeID)"
+    }
+
+    /// Resolves `host` (an IP literal, optionally `[bracketed]` or `%zoned`, or a name) with `AF_UNSPEC`, preferring
+    /// the first IPv4 answer and falling back to the first IPv6 one. Call only with the tunnel DOWN: with it up, the
+    /// engine's virtual DNS answers every name with a fake 198.18.x.x address.
+    static func resolve(_ rawHost: String) -> ServerAddress? {
+        var host = rawHost.trimmingCharacters(in: .whitespaces)
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        guard !host.isEmpty else { return nil }
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = SOCK_STREAM
+        var res: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, nil, &hints, &res) == 0, let first = res else { return nil }
+        defer { freeaddrinfo(first) }
+
+        var v4: ServerAddress?
+        var v6: ServerAddress?
+        var node: UnsafeMutablePointer<addrinfo>? = first
+        while let ai = node, v4 == nil {
+            if let sa = ai.pointee.ai_addr {
+                if ai.pointee.ai_family == AF_INET {
+                    var sin = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                    var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                    if inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(buf.count)) != nil {
+                        v4 = ServerAddress(ip: String(cString: buf), isIPv6: false, scopeID: 0)
+                    }
+                } else if ai.pointee.ai_family == AF_INET6, v6 == nil {
+                    var sin6 = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+                    var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                    if inet_ntop(AF_INET6, &sin6.sin6_addr, &buf, socklen_t(buf.count)) != nil {
+                        let ip = String(cString: buf)
+                        var scope = sin6.sin6_scope_id
+                        if scope == 0, isLinkLocalV6(ip) { scope = primaryInterfaceIndex() ?? 0 }
+                        v6 = ServerAddress(ip: ip, isIPv6: true, scopeID: isLinkLocalV6(ip) ? scope : 0)
+                    }
+                }
+            }
+            node = ai.pointee.ai_next
+        }
+        return v4 ?? v6
+    }
+
+    static func isLinkLocalV6(_ ip: String) -> Bool {
+        var a = in6_addr()
+        guard inet_pton(AF_INET6, ip, &a) == 1 else { return false }
+        return withUnsafeBytes(of: &a) { $0[0] == 0xfe && ($0[1] & 0xc0) == 0x80 }
+    }
+
+    /// Index of the interface that currently carries the default route: a link-local server without a zone is
+    /// assumed to be on that link (the same choice the Windows client makes). Found by "connecting" a UDP socket
+    /// (no packet is sent) and matching the local address the kernel picked against the interface list.
+    static func primaryInterfaceIndex() -> UInt32? {
+        func localAddress(family: Int32, probe: String) -> String? {
+            let fd = socket(family, SOCK_DGRAM, 0)
+            guard fd >= 0 else { return nil }
+            defer { close(fd) }
+            var storage = sockaddr_storage()
+            var len: socklen_t
+            if family == AF_INET {
+                var sin = sockaddr_in()
+                sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                sin.sin_family = sa_family_t(AF_INET)
+                sin.sin_port = UInt16(9).bigEndian
+                guard inet_pton(AF_INET, probe, &sin.sin_addr) == 1 else { return nil }
+                len = socklen_t(MemoryLayout<sockaddr_in>.size)
+                withUnsafeMutableBytes(of: &storage) { dst in withUnsafeBytes(of: &sin) { dst.copyMemory(from: $0) } }
+            } else {
+                var sin6 = sockaddr_in6()
+                sin6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                sin6.sin6_family = sa_family_t(AF_INET6)
+                sin6.sin6_port = UInt16(9).bigEndian
+                guard inet_pton(AF_INET6, probe, &sin6.sin6_addr) == 1 else { return nil }
+                len = socklen_t(MemoryLayout<sockaddr_in6>.size)
+                withUnsafeMutableBytes(of: &storage) { dst in withUnsafeBytes(of: &sin6) { dst.copyMemory(from: $0) } }
+            }
+            let rc = withUnsafePointer(to: &storage) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, len) }
+            }
+            guard rc == 0 else { return nil }
+            var local = sockaddr_storage()
+            var localLen = socklen_t(MemoryLayout<sockaddr_storage>.size)
+            let ok = withUnsafeMutablePointer(to: &local) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &localLen) }
+            }
+            guard ok == 0 else { return nil }
+            return numericHost(&local)
+        }
+        guard let local = localAddress(family: AF_INET, probe: "192.0.2.1")
+                ?? localAddress(family: AF_INET6, probe: "2001:db8::1") else { return nil }
+        var ifap: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifap) == 0, let head = ifap else { return nil }
+        defer { freeifaddrs(head) }
+        var node: UnsafeMutablePointer<ifaddrs>? = head
+        while let ifa = node {
+            if let sa = ifa.pointee.ifa_addr, sa.pointee.sa_family == AF_INET || sa.pointee.sa_family == AF_INET6 {
+                var storage = sockaddr_storage()
+                withUnsafeMutableBytes(of: &storage) { dst in
+                    dst.copyMemory(from: UnsafeRawBufferPointer(start: sa, count: Int(sa.pointee.sa_len)))
+                }
+                if numericHost(&storage) == local {
+                    let index = if_nametoindex(ifa.pointee.ifa_name)
+                    return index != 0 ? index : nil
+                }
+            }
+            node = ifa.pointee.ifa_next
+        }
+        return nil
+    }
+
+    /// Numeric host of a sockaddr, without any zone suffix.
+    private static func numericHost(_ storage: inout sockaddr_storage) -> String? {
+        var buf = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        let len = socklen_t(storage.ss_len)
+        let rc = withUnsafePointer(to: &storage) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getnameinfo($0, len, &buf, socklen_t(buf.count), nil, 0, NI_NUMERICHOST)
+            }
+        }
+        guard rc == 0 else { return nil }
+        return String(cString: buf).split(separator: "%").first.map(String.init)
+    }
+
+    /// The socket address to dial, with the scope for a link-local IPv6 server.
+    func socketAddress(port: UInt16) -> (sockaddr_storage, socklen_t)? {
+        var storage = sockaddr_storage()
+        if isIPv6 {
+            var sin6 = sockaddr_in6()
+            sin6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            sin6.sin6_family = sa_family_t(AF_INET6)
+            sin6.sin6_port = port.bigEndian
+            sin6.sin6_scope_id = scopeID
+            guard inet_pton(AF_INET6, ip, &sin6.sin6_addr) == 1 else { return nil }
+            withUnsafeMutableBytes(of: &storage) { dst in withUnsafeBytes(of: &sin6) { dst.copyMemory(from: $0) } }
+            return (storage, socklen_t(MemoryLayout<sockaddr_in6>.size))
+        }
+        var sin = sockaddr_in()
+        sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        sin.sin_family = sa_family_t(AF_INET)
+        sin.sin_port = port.bigEndian
+        guard inet_pton(AF_INET, ip, &sin.sin_addr) == 1 else { return nil }
+        withUnsafeMutableBytes(of: &storage) { dst in withUnsafeBytes(of: &sin) { dst.copyMemory(from: $0) } }
+        return (storage, socklen_t(MemoryLayout<sockaddr_in>.size))
+    }
+}
+
+/// SOCKS5 health probe, a port of the Windows client's `probe.rs`: greeting (no-auth, plus username/password when a
+/// username is set), RFC 1929 sign-in if the server picks it, then UDP ASSOCIATE — all under ONE deadline, so a
+/// server that accepts TCP and then stays silent (a suspended iOS relay) reads as "not answering" within the timeout.
+/// Blocking; call it on a queue that may block for `timeout`. Dials the pinned address, which the excluded route
+/// sends over the physical interface, never through the tunnel.
+enum Socks5Probe {
+    enum Result: Equatable {
+        /// SOCKS5 answered (and accepted our credentials). `udp` is whether it granted a UDP ASSOCIATE.
+        case answering(udp: Bool)
+        /// The server answered SOCKS5 but refused our credentials / offered methods.
+        case authRejected(String)
+        /// No usable SOCKS5 answer: refused, timed out, closed, or spoke something else.
+        case notAnswering(String)
+    }
+
+    private struct Failure: Error { let reason: String }
+
+    static func probe(_ server: ServerAddress, port: UInt16, username: String, password: String,
+                      timeout: TimeInterval) -> Result {
+        guard let (address, addressLength) = server.socketAddress(port: port) else {
+            return .notAnswering("bad address \(server.ip)")
+        }
+        let fd = socket(server.isIPv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return .notAnswering("socket: errno \(errno)") }
+        defer { close(fd) }
+        var one: Int32 = 1
+        // A write to a server that already reset us must fail with EPIPE, not SIGPIPE the whole extension.
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+
+        let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, timeout) * 1_000_000_000)
+        let io = IO(fd: fd, deadline: deadline, timeout: timeout)
+        do {
+            var addr = address
+            let rc = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, addressLength) }
+            }
+            if rc != 0 {
+                guard errno == EINPROGRESS else { return .notAnswering("connect: \(String(cString: strerror(errno)))") }
+                try io.wait(POLLOUT, what: "connect")
+                var soError: Int32 = 0
+                var len = socklen_t(MemoryLayout<Int32>.size)
+                getsockopt(fd, SOL_SOCKET, SO_ERROR, &soError, &len)
+                if soError != 0 { return .notAnswering("connect: \(String(cString: strerror(soError)))") }
+            }
+
+            let withAuth = !username.isEmpty
+            try io.write(withAuth ? [5, 2, 0x00, 0x02] : [5, 1, 0x00])
+            let choice = try io.read(2)
+            guard choice[0] == 5 else { return .notAnswering("not a SOCKS5 server (version byte \(choice[0]))") }
+            switch choice[1] {
+            case 0x00:
+                break
+            case 0x02:
+                guard withAuth else { return .authRejected("server requires a username and password") }
+                let user = Array(username.utf8), pass = Array(password.utf8)
+                guard user.count <= 255, pass.count <= 255 else {
+                    return .authRejected("username or password longer than 255 bytes")
+                }
+                try io.write([1, UInt8(user.count)] + user + [UInt8(pass.count)] + pass)
+                let status = try io.read(2)
+                guard status[1] == 0 else { return .authRejected("wrong username or password") }
+            case 0xFF:
+                return .authRejected("server accepts none of the offered sign-in methods")
+            case let method:
+                return .notAnswering("server chose unsupported method \(method)")
+            }
+
+            // UDP ASSOCIATE with an unspecified client address (RFC 1928 §7). The association ends when we close.
+            try io.write([5, 3, 0, 1, 0, 0, 0, 0, 0, 0])
+            let head = try io.read(4)
+            let udp = head[0] == 5 && head[1] == 0
+            // Drain the bound address so the server sees a clean close rather than a reset with unread data.
+            if udp {
+                switch head[3] {
+                case 1: _ = try? io.read(4 + 2)
+                case 4: _ = try? io.read(16 + 2)
+                case 3: if let len = try? io.read(1) { _ = try? io.read(Int(len[0]) + 2) }
+                default: break
+                }
+            }
+            shutdown(fd, SHUT_RDWR)
+            return .answering(udp: udp)
+        } catch let failure as Failure {
+            return .notAnswering(failure.reason)
+        } catch {
+            return .notAnswering("\(error)")
+        }
+    }
+
+    /// Nonblocking reads and writes against one shared deadline.
+    private struct IO {
+        let fd: Int32
+        let deadline: UInt64
+        let timeout: TimeInterval
+
+        func wait(_ events: Int32, what: String) throws {
+            while true {
+                let now = DispatchTime.now().uptimeNanoseconds
+                guard now < deadline else {
+                    throw Failure(reason: "no SOCKS5 reply within \(String(format: "%g", timeout)) s (\(what))")
+                }
+                let ms = Int32(min(UInt64(Int32.max), (deadline - now + 999_999) / 1_000_000))
+                var pfd = pollfd(fd: fd, events: Int16(events), revents: 0)
+                let n = poll(&pfd, 1, ms)
+                if n > 0 { return }
+                if n < 0 && errno != EINTR { throw Failure(reason: "\(what): poll \(String(cString: strerror(errno)))") }
+            }
+        }
+
+        func write(_ bytes: [UInt8]) throws {
+            var sent = 0
+            while sent < bytes.count {
+                let n = bytes.withUnsafeBytes { send(fd, $0.baseAddress! + sent, bytes.count - sent, 0) }
+                if n > 0 { sent += n; continue }
+                if n < 0 && (errno == EAGAIN || errno == EINTR) { try wait(POLLOUT, what: "send"); continue }
+                throw Failure(reason: "handshake: send \(String(cString: strerror(errno)))")
+            }
+        }
+
+        func read(_ count: Int) throws -> [UInt8] {
+            var buf = [UInt8](repeating: 0, count: count)
+            var got = 0
+            while got < count {
+                let n = buf.withUnsafeMutableBytes { recv(fd, $0.baseAddress! + got, count - got, 0) }
+                if n > 0 { got += n; continue }
+                if n == 0 { throw Failure(reason: "handshake: server closed the connection") }
+                if errno == EAGAIN || errno == EINTR { try wait(POLLIN, what: "reply"); continue }
+                throw Failure(reason: "handshake: recv \(String(cString: strerror(errno)))")
+            }
+            return buf
+        }
+    }
+}
+
+// MARK: - Server address + SOCKS5 probe (END)
 
 /// Extension-wide logger — this process is separate from the app (a real
 /// Network Extension sandbox), so the app's own `DebugLog.swift` file logger

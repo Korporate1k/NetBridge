@@ -11,6 +11,7 @@ struct MacDashboardView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 if case .unreachable = model.proxyHealth { unreachableBanner }
+                if case .authRejected = model.proxyHealth { authRejectedBanner }
                 statGrid
                 chartCard
             }
@@ -22,7 +23,7 @@ struct MacDashboardView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                StatusBadge(status: model.tunnel.status)
+                StatusBadge(status: model.tunnel.status, reconnectAttempt: model.reconnectAttempt)
                     .font(.title2.weight(.semibold))
                 Text(serverLine)
                     .font(.system(.body, design: .monospaced))
@@ -58,6 +59,25 @@ struct MacDashboardView: View {
         }
         .padding(14)
         .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// The server is up and speaking SOCKS5 but refuses our credentials: every connection through the tunnel fails.
+    private var authRejectedBanner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "person.crop.circle.badge.xmark")
+                .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Sign-in refused")
+                    .font(.headline)
+                Text("\(model.config.host):\(model.config.port) answered but rejected the username or password\(lastCheckedText). Nothing gets through until they match the server's — fix them in Client and connect again.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     /// "just now" / "12s ago", or nil when no probe has reported yet.
@@ -97,6 +117,7 @@ struct MacDashboardView: View {
         case .notConnected: return "—"
         case .checking: return "Checking…"
         case .healthy: return "Answering"
+        case .authRejected: return "Sign-in refused"
         case .unreachable: return "Not answering"
         }
     }
@@ -105,7 +126,12 @@ struct MacDashboardView: View {
         switch model.proxyHealth {
         case .notConnected: return nil
         case .checking: return "first check within a few seconds"
-        case .healthy, .unreachable: return lastCheckedAgo.map { "last checked \($0)" }
+        case .healthy(let udp):
+            let checked = lastCheckedAgo.map { "checked \($0)" }
+            let udpText = udp.map { $0 ? "UDP relayed" : "UDP refused" }
+            let parts = [udpText, checked].compactMap { $0 }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        case .authRejected, .unreachable: return lastCheckedAgo.map { "last checked \($0)" }
         }
     }
 

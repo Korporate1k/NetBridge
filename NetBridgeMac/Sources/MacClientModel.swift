@@ -23,12 +23,21 @@ final class MacClientModel: ObservableObject {
     @Published private(set) var samples: [ThroughputSample] = []
     @Published private(set) var connectedSince: Date?
     @Published var pairingMessage: String?
+    /// The reconnect attempt in progress (scheduled or starting), for "Reconnecting (n)". `nil` when none.
+    @Published private(set) var reconnectAttempt: Int?
 
     let tunnel = ClientTunnelManager()
 
     private var pollTimer: Timer?
     private var lastStats: TunnelStats?
     private var lastPoll: Date?
+    /// Stats requests go out one at a time: a slow extension answering late must not pile up requests, and a late
+    /// reply must not land after a newer one (that is what made rates jump between 0 and 2x). Bumped on every
+    /// start/stop of polling so replies from an earlier session are dropped.
+    private var pollGeneration = 0
+    private var pollInFlightSince: Date?
+    /// The password the form was filled with from the Keychain (`nil` = the read failed). See `ClientTunnelManager.save`.
+    private var loadedPassword: String?
     private var cancellables = Set<AnyCancellable>()
 
     // Auto-reconnect state (see `sessionEnded()`).
@@ -39,6 +48,13 @@ final class MacClientModel: ObservableObject {
     private var sessionWasUp = false
     private var reconnectAttempts = 0
     private var reconnectTask: Task<Void, Never>?
+    /// True from the moment a reconnect calls `start()` until that session reaches `.connected`. A
+    /// connecting -> disconnected transition while it is set is a failed attempt and goes back through the backoff
+    /// (before, a failed automatic start left the VPN down for good).
+    private var reconnectInFlight = false
+    /// The extension's SOCKS5 probe got a real answer (with our credentials) during this session. Only then does a
+    /// long session count as healthy enough to forgive earlier reconnect attempts.
+    private var probeAnsweredThisSession = false
     private static let reconnectDelays = [2, 5, 15]  // seconds; one entry per attempt
     /// How long a session must last — *and* carry traffic — before earlier reconnect attempts are forgiven.
     private static let healthySeconds: TimeInterval = 60
@@ -53,14 +69,16 @@ final class MacClientModel: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         let savedPort = defaults.integer(forKey: Self.portKey)
-        let password = KeychainStore.load(key: Self.passwordKey, accessGroup: ClientTunnelManager.keychainAccessGroup)
-            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        // nil when the Keychain read FAILED (as opposed to "no password stored", which is ""): the form then shows
+        // an empty field, and saving leaves the stored password alone unless the user types a new one.
+        let storedPassword = ClientTunnelManager.loadStoredPassword()
         let loaded = ClientConfiguration(
             host: defaults.string(forKey: Self.hostKey) ?? "",
             port: UInt16(clamping: savedPort > 0 ? savedPort : 1080),
             username: defaults.string(forKey: Self.userKey) ?? "",
-            password: password
+            password: storedPassword ?? ""
         )
+        self.loadedPassword = storedPassword
         self.config = loaded
         self.portText = String(loaded.port)
 
@@ -101,7 +119,11 @@ final class MacClientModel: ObservableObject {
         case notConnected
         /// Connected, but no probe has reported yet (the first lands a few seconds in).
         case checking
-        case healthy
+        /// The server answered SOCKS5 and accepted our sign-in. `udp`: whether it granted UDP ASSOCIATE (`nil` =
+        /// an older extension that does not report it).
+        case healthy(udp: Bool?)
+        /// The server answered but refused the username/password: nothing will get through until they are fixed.
+        case authRejected
         /// Connected, and the proxy is not answering — traffic is going nowhere.
         case unreachable
     }
@@ -109,10 +131,14 @@ final class MacClientModel: ObservableObject {
     var proxyHealth: ProxyHealth {
         guard tunnel.status == .connected || tunnel.status == .reasserting else { return .notConnected }
         guard stats.lastProbe > 0, let reachable = stats.serverReachable else { return .checking }
-        return reachable ? .healthy : .unreachable
+        if !reachable { return .unreachable }
+        if stats.authRejected == true { return .authRejected }
+        return .healthy(udp: stats.udpRelayed)
     }
 
+    /// Also true while a reconnect is scheduled, so the button offers "Disconnect" (which cancels it).
     var isConnectedOrConnecting: Bool {
+        if reconnectAttempt != nil { return true }
         switch tunnel.status {
         case .connected, .connecting, .reasserting: return true
         default: return false
@@ -146,9 +172,14 @@ final class MacClientModel: ObservableObject {
         suppressReconnect = true
         tunnel.loadOrCreate { [weak self] _ in
             guard let self else { return }
-            self.tunnel.save(self.config) { [weak self] result in
+            let attempted = self.config.password
+            self.tunnel.save(self.config, loadedPassword: self.loadedPassword) { [weak self] result in
                 guard let self else { return }
-                if case .success = result { self.tunnel.start() }
+                if case .success = result {
+                    // Mirror what the Keychain now holds: `save` skips an empty password it never loaded.
+                    if !(self.loadedPassword == nil && attempted.isEmpty) { self.loadedPassword = attempted }
+                    self.tunnel.start()
+                }
                 self.suppressReconnect = false
             }
         }
@@ -177,6 +208,8 @@ final class MacClientModel: ObservableObject {
     private func statusChanged(_ status: NEVPNStatus) {
         if status == .connected {
             sessionWasUp = true
+            reconnectInFlight = false
+            reconnectAttempt = nil
             startPolling()
         } else {
             stopPolling()
@@ -185,8 +218,23 @@ final class MacClientModel: ObservableObject {
                 samples = []
                 connectedSince = nil
             }
-            if status == .disconnected { sessionEnded() }
+            if status == .disconnected {
+                if reconnectInFlight && !sessionWasUp {
+                    reconnectAttemptFailed("the tunnel did not come up")
+                } else {
+                    sessionEnded()
+                }
+            }
         }
+    }
+
+    /// A reconnect's `start()` failed (threw, or connecting -> disconnected without ever connecting). It counts
+    /// against the same 2/5/15 s budget as a drop, so a server that is briefly unreachable during a network change
+    /// still gets the remaining attempts instead of leaving the VPN down for good.
+    private func reconnectAttemptFailed(_ why: String) {
+        reconnectInFlight = false
+        guard !userRequestedStop, !suppressReconnect else { return }
+        scheduleReconnect(after: NSError(domain: "NetBridgeMac", code: 1, userInfo: [NSLocalizedDescriptionKey: why]))
     }
 
     // MARK: - Auto-reconnect
@@ -233,28 +281,44 @@ final class MacClientModel: ObservableObject {
     private func scheduleReconnect(after error: Error) {
         guard !userRequestedStop, reconnectAttempts < Self.reconnectDelays.count else {
             DebugLog.important("client", "VPN dropped (\(error.localizedDescription)); not reconnecting (attempts=\(reconnectAttempts))")
+            reconnectAttempt = nil
             return
         }
         let delay = Self.reconnectDelays[reconnectAttempts]
         reconnectAttempts += 1
+        reconnectAttempt = reconnectAttempts
         DebugLog.important("client", "VPN dropped (\(error.localizedDescription)); reconnecting in \(delay)s (attempt \(reconnectAttempts))")
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
-            guard let self, !Task.isCancelled, !self.userRequestedStop, self.tunnel.status == .disconnected else { return }
+            guard let self, !Task.isCancelled, !self.userRequestedStop else { return }
+            guard self.tunnel.status == .disconnected || self.tunnel.status == .invalid else {
+                self.reconnectAttempt = nil
+                return
+            }
+            self.reconnectInFlight = true
             self.tunnel.start()
+            // `start()` reports a synchronous failure through `lastError` and never changes the status.
+            if self.tunnel.lastError != nil, self.tunnel.status == .disconnected || self.tunnel.status == .invalid {
+                self.reconnectAttemptFailed(self.tunnel.lastError ?? "start failed")
+            }
         }
     }
 
     private func cancelReconnect() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        reconnectInFlight = false
+        reconnectAttempt = nil
     }
 
     private func startPolling() {
         guard pollTimer == nil else { return }
         lastStats = nil
         lastPoll = nil
+        probeAnsweredThisSession = false
+        pollGeneration += 1
+        pollInFlightSince = nil
         connectedSince = tunnel.connectedDate
         poll()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -265,19 +329,38 @@ final class MacClientModel: ObservableObject {
     private func stopPolling() {
         pollTimer?.invalidate()
         pollTimer = nil
+        pollGeneration += 1
+        pollInFlightSince = nil
     }
 
     private func poll() {
+        // One request at a time. If a reply never comes (the extension is wedged), try again after 5 s.
+        if let since = pollInFlightSince, Date().timeIntervalSince(since) < 5 { return }
+        pollInFlightSince = Date()
+        let generation = pollGeneration
         tunnel.requestStats { [weak self] data in
-            guard let data, let decoded = try? JSONDecoder().decode(TunnelStats.self, from: data) else { return }
-            Task { @MainActor in self?.record(decoded) }
+            let decoded = data.flatMap { try? JSONDecoder().decode(TunnelStats.self, from: $0) }
+            Task { @MainActor in
+                guard let self, generation == self.pollGeneration else { return }
+                self.pollInFlightSince = nil
+                if let decoded { self.record(decoded) }
+            }
         }
     }
 
     private func record(_ new: TunnelStats) {
         let now = Date()
-        if let last = lastStats, let lastPoll, now.timeIntervalSince(lastPoll) > 0.2 {
-            let dt = now.timeIntervalSince(lastPoll)
+        // Rates use the extension's own snapshot times: this app's poll timing includes IPC latency, which made
+        // one-second rates swing whenever a reply was late. Older extensions without `sampledAt` fall back to it.
+        var dt: TimeInterval = 0
+        if let last = lastStats {
+            if new.sampledAt > 0, last.sampledAt > 0 {
+                dt = new.sampledAt - last.sampledAt
+            } else if let lastPoll {
+                dt = now.timeIntervalSince(lastPoll)
+            }
+        }
+        if let last = lastStats, dt > 0.2 {
             samples.append(ThroughputSample(
                 date: now,
                 up: Double(max(0, new.up - last.up)) / dt,
@@ -290,13 +373,17 @@ final class MacClientModel: ObservableObject {
         stats = new
         if new.connectedSince > 0 { connectedSince = Date(timeIntervalSince1970: new.connectedSince) }
 
-        // Forgive earlier reconnect attempts only for a session that has lasted a while AND actually carried
-        // traffic. Clearing the counter on `.connected` alone was wrong: the tunnel reports connected even when
-        // the proxy is unreachable and nothing flows, so any fault spaced more than a minute apart could retry
-        // for ever without the cap biting.
-        if reconnectAttempts > 0, new.down > 0, let since = connectedSince,
+        if new.lastProbe > 0, new.serverReachable == true, new.authRejected != true {
+            probeAnsweredThisSession = true
+        }
+
+        // Forgive earlier reconnect attempts only for a session that has lasted a while AND in which the proxy
+        // really answered a SOCKS5 probe with our credentials. Clearing the counter on `.connected` alone was
+        // wrong: the tunnel reports connected even when the proxy is unreachable. Downlink bytes were not enough
+        // either: packets the engine answers locally (virtual DNS) count as downlink with the proxy gone.
+        if reconnectAttempts > 0, probeAnsweredThisSession, let since = connectedSince,
            now.timeIntervalSince(since) >= Self.healthySeconds {
-            DebugLog.important("client", "session healthy (\(Int(now.timeIntervalSince(since)))s up, \(new.down) B down); clearing reconnect attempts")
+            DebugLog.important("client", "session healthy (\(Int(now.timeIntervalSince(since)))s up, proxy answered); clearing reconnect attempts")
             reconnectAttempts = 0
         }
     }
