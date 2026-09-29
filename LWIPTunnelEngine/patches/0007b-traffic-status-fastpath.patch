@@ -1,0 +1,33 @@
+Per-packet overhead (all platforms), tun2proxy part. Apply at the tun2proxy root with patch -p1, after 0006b.
+traffic_status_update locked a global Mutex for every relayed chunk just to learn that no callback was registered.
+An AtomicBool set in tun2proxy_set_traffic_status_callback makes that case lock-free; behaviour with a callback is
+unchanged.
+
+--- a/src/traffic_status.rs
++++ b/src/traffic_status.rs
+@@ -13,6 +13,7 @@
+ ) {
+     if let Ok(mut cb) = TRAFFIC_STATUS_CALLBACK.lock() {
+         *cb = Some(TrafficStatusCallback(callback, ctx));
++        CALLBACK_SET.store(true, std::sync::atomic::Ordering::Release);
+     } else {
+         log::error!("set traffic status callback failed");
+     }
+@@ -44,11 +45,17 @@
+ 
+ static TRAFFIC_STATUS_CALLBACK: std::sync::Mutex<Option<TrafficStatusCallback>> = std::sync::Mutex::new(None);
+ static SEND_INTERVAL_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
++// Local patch 0007b: set once a callback has been registered (it is never cleared, as the slot never goes back to
++// None). Lets traffic_status_update, which runs for every relayed chunk, skip the mutex when nobody is listening.
++static CALLBACK_SET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+ 
+ static TRAFFIC_STATUS: LazyLock<Mutex<TrafficStatus>> = LazyLock::new(|| Mutex::new(TrafficStatus::default()));
+ static TIME_STAMP: LazyLock<Mutex<std::time::Instant>> = LazyLock::new(|| Mutex::new(std::time::Instant::now()));
+ 
+ pub(crate) fn traffic_status_update(delta_tx: usize, delta_rx: usize) -> Result<()> {
++    if !CALLBACK_SET.load(std::sync::atomic::Ordering::Acquire) {
++        return Ok(());
++    }
+     {
+         let is_none_or_error = TRAFFIC_STATUS_CALLBACK.lock().map(|guard| guard.is_none()).unwrap_or_else(|e| {
+             log::error!("Failed to acquire lock: {e}");

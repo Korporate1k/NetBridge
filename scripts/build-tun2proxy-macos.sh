@@ -1,4 +1,7 @@
 #!/bin/bash
+# SUPERSEDED (2026-09-26) by scripts/build-tun2proxy-apple.sh, which builds all three slices with the full patch set
+# (0001-0007b). Kept for history; running it would rebuild only the macOS slice with patches 0001-0004.
+#
 # Adds a macOS (arm64) slice to LWIPTunnelEngine/tun2proxy.xcframework.
 #
 # Rebuilds tun2proxy @ fc77ca3 with the same three local patches the iOS slices

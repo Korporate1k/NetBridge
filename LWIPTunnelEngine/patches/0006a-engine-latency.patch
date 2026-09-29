@@ -1,0 +1,50 @@
+Engine latency fixes (all platforms). Apply at the tun2proxy root with patch -p1, after 0005.
+- TCP_NODELAY on the proxy TcpStream (create_tcp_stream).
+- 5 s idle limit on virtual-DNS sessions, which otherwise held a max_sessions slot for the full UDP timeout.
+- Virtual-DNS answer TTL 5 s -> 300 s (mappings live a day since 0003).
+
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -163,7 +163,13 @@
+ 
+ async fn create_tcp_stream(socket_queue: &Option<Arc<SocketQueue>>, peer: SocketAddr) -> std::io::Result<TcpStream> {
+     match &socket_queue {
+-        None => TcpStream::connect(peer).await,
++        None => {
++            // Local patch 0006a: no Nagle on the proxy connection. Upload data reaches us in small pieces from the
++            // user-space stack and is relayed one write at a time; Nagle would hold each until the proxy's ACK.
++            let stream = TcpStream::connect(peer).await?;
++            let _ = stream.set_nodelay(true);
++            Ok(stream)
++        }
+         Some(queue) => queue.recv_tcp(peer.ip().into()).await?.connect(peer).await,
+     }
+ }
+@@ -441,7 +447,13 @@
+ async fn handle_virtual_dns_session(mut udp: IpStackUdpStream, dns: Arc<Mutex<VirtualDns>>) -> crate::Result<()> {
+     let mut buf = [0_u8; 4096];
+     loop {
+-        let len = match udp.read(&mut buf).await {
++        // Local patch 0006a: a resolver socket sends its query (often A then AAAA) and is done. Without this idle
++        // limit the session held one of `max_sessions` slots for the whole UDP timeout (120 s); resolvers that use a
++        // new source port per lookup (Windows does) could exhaust the slots during ordinary browsing, and new TCP
++        // connections were then dropped.
++        let read = tokio::time::timeout(std::time::Duration::from_secs(5), udp.read(&mut buf)).await;
++        let Ok(read) = read else { break };
++        let len = match read {
+             Err(e) => {
+                 // indicate UDP read fails not an error.
+                 log::debug!("Virtual DNS session error: {e}");
+--- a/src/virtual_dns.rs
++++ b/src/virtual_dns.rs
+@@ -64,7 +64,9 @@
+             return Ok((message.to_vec()?, qname, unspecified));
+         }
+         let ip = self.find_or_allocate_ip(qname.clone())?;
+-        let message = dns::build_dns_response(message, &qname, ip, 5)?;
++        // Local patch 0006a: 5 s TTL made every lookup miss the OS cache almost immediately. Mappings live for a day
++        // (patch 0003), so a 5-minute TTL is safe and cuts query volume.
++        let message = dns::build_dns_response(message, &qname, ip, 300)?;
+         Ok((message.to_vec()?, qname, ip))
+     }
+ 

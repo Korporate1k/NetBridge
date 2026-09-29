@@ -1,0 +1,18 @@
+64 KB TCP window per flow (macOS and Windows only; not iOS: network-extension memory limit).
+Apply at the tun2proxy root with patch -p1, after 0006a. Sets tcp_cfg.max_unacked_bytes and read_buffer_size to 65535.
+
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -249,6 +249,12 @@
+     ipstack_config.mtu(mtu)?;
+     let mut tcp_cfg = ipstack::TcpConfig::default();
+     tcp_cfg.timeout = std::time::Duration::from_secs(args.tcp_timeout);
++    // Local patch 0006b: ipstack's defaults allow only 16 KB in flight and advertise a 16 KB window per connection,
++    // which caps each TCP flow at 16 KB per round trip through the tun device. The SYN-ACK carries no window-scale
++    // option, so 65535 is the useful ceiling. (Windows and macOS only: ~128 KB per session is fine on a PC, not
++    // within an iOS network extension's memory limit.)
++    tcp_cfg.max_unacked_bytes = 65535;
++    tcp_cfg.read_buffer_size = 65535;
+     if let Some(mss) = args.tcp_mss {
+         tcp_cfg.options = Some(vec![ipstack::TcpOptions::MaximumSegmentSize(mss)]);
+     }

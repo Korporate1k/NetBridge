@@ -1,0 +1,22 @@
+--- a/src/virtual_dns.rs	2026-09-26 13:59:50
++++ b/src/virtual_dns.rs	2026-09-26 13:59:50
+@@ -51,8 +51,18 @@
+     /// Returns the DNS response to send back to the client.
+     pub fn generate_query(&mut self, data: &[u8]) -> Result<(Vec<u8>, String, IpAddr)> {
+         use crate::dns;
+-        let message = dns::parse_data_to_dns_message(data, false)?;
++        let mut message = dns::parse_data_to_dns_message(data, false)?;
+         let qname = dns::extract_domain_from_dns_message(&message)?;
++        // Local patch 0005. Only A queries get a fake address. Every other type (AAAA, HTTPS, ...) used to be
++        // answered with an A record too, a type mismatch that Windows' resolver rejects outright: getaddrinfo
++        // (which asks A and AAAA) then fails every hostname with WSANO_RECOVERY. Reply NOERROR with no answers
++        // (NODATA) instead, which every resolver understands as "no records of this type".
++        let is_a = message.queries.first().is_some_and(|q| q.query_type == hickory_proto::rr::RecordType::A);
++        if !is_a {
++            message.metadata.message_type = hickory_proto::op::MessageType::Response;
++            let unspecified = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
++            return Ok((message.to_vec()?, qname, unspecified));
++        }
+         let ip = self.find_or_allocate_ip(qname.clone())?;
+         let message = dns::build_dns_response(message, &qname, ip, 5)?;
+         Ok((message.to_vec()?, qname, ip))

@@ -19,6 +19,13 @@ public final class TunnelEngine {
     public static let tunnelLocalAddress = "10.0.0.2"
     public static let tunnelLocalAddressV6 = "fd00:7470::2"
     private static let tunnelMTU: UInt16 = 1500
+    /// MSS the engine advertises in its SYN-ACKs to the OS side (`--tcp-mss`). Without it the userspace stack sends no
+    /// MSS option and the OS falls back to its RFC default (536 on Windows, 512 on macOS), so uploads and the first
+    /// large segment of every connection (a TLS ClientHello) go out in small pieces. MTU - 60 fits both IPv4
+    /// (MTU - 40) and IPv6 (MTU - 60) with one value; same as the Windows client (`engine.rs` `TCP_MSS`). The flag is
+    /// present in every shipped xcframework slice (fc77ca3 + local patches); an engine WITHOUT it would make clap
+    /// `exit()` the whole extension, so check `strings libtun2proxy.a | grep tcp-mss` if the xcframework is rebuilt.
+    public static let tcpMSS: UInt16 = 1440
 
     /// Concurrent TCP+UDP sessions the engine will track (`--max-sessions`; tun2proxy's own default is 200). Past the
     /// cap it silently drops packets of NEW flows ("Too many sessions ... dropping new session"), so the cap is also
@@ -61,10 +68,30 @@ public final class TunnelEngine {
     /// and a backed-up socketpair is where Darwin starts failing the engine's writes.
     public var onPacketsToWrite: (([Data], [Int32]) -> Void)?
 
-    /// Called (on the engine's worker thread) if the engine stops on its own — i.e. not via `stop()`. tun2proxy
-    /// force-exits the whole process a couple of seconds after this, so the owner should report the failure
-    /// (`cancelTunnelWithError`) while it still can.
-    public var onEngineExit: ((Int32) -> Void)?
+    /// Why the engine ended without `stop()` being called.
+    public enum Exit: CustomStringConvertible {
+        /// `tun2proxy_run_with_cli_args` returned with this code.
+        case engineReturned(Int32)
+        /// The packet device (our socketpair end) failed or closed under the read loop; the engine can no longer
+        /// deliver anything back into the tunnel even if it is still running.
+        case deviceLost(String)
+        /// The engine was never started because it cannot be given this proxy address (see `canDial(host:)`).
+        case unsupportedProxyAddress(String)
+
+        public var description: String {
+            switch self {
+            case .engineReturned(let rc): return "tunnel engine stopped unexpectedly (rc=\(rc))"
+            case .deviceLost(let why): return "tunnel packet device lost (\(why))"
+            case .unsupportedProxyAddress(let host): return "the tunnel engine cannot dial the proxy address \(host)"
+            }
+        }
+    }
+
+    /// Called at most once, on an engine thread, if the engine stops on its own — i.e. not via `stop()`: the engine
+    /// returned, or the read loop lost the packet device. tun2proxy force-exits the whole process a couple of
+    /// seconds after the engine returns, so the owner should report the failure (`cancelTunnelWithError`) while
+    /// it still can.
+    public var onEngineExit: ((Exit) -> Void)?
 
     private static let maxBatch = 64
 
@@ -118,6 +145,8 @@ public final class TunnelEngine {
     private var reader: Thread?
     private var started = false
     private var stopped = false
+    /// Set once `onEngineExit` has been taken, so the worker and the read loop cannot both report.
+    private var exitReported = false
 
     private var isStopped: Bool {
         stateLock.lock()
@@ -125,7 +154,8 @@ public final class TunnelEngine {
         return stopped
     }
 
-    public init(proxyHost: String, proxyPort: UInt16, username: String? = nil, password: String? = nil,
+    public init(proxyHost: String, proxyPort: UInt16,
+                username: String? = nil, password: String? = nil,
                 maxSessions: Int = TunnelEngine.defaultMaxSessions,
                 udpTimeoutSeconds: Int = TunnelEngine.defaultUDPTimeoutSeconds,
                 verbosity: String = TunnelEngine.defaultVerbosity) {
@@ -151,9 +181,19 @@ public final class TunnelEngine {
         started = true
         stateLock.unlock()
 
+        // An unparseable --proxy value makes clap exit() the whole process, so never build one.
+        guard Self.canDial(host: proxyHost) else {
+            logHandler?("refusing to start: tun2proxy cannot dial proxy host \(proxyHost) (IPv6 proxy servers are not supported)")
+            let host = proxyHost
+            DispatchQueue.global().async { [weak self] in self?.reportExit(.unsupportedProxyAddress(host)) }
+            return
+        }
+
         var fds: [Int32] = [-1, -1]
         guard socketpair(AF_UNIX, SOCK_DGRAM, 0, &fds) == 0 else {
-            logHandler?("socketpair() failed errno=\(errno)")
+            let err = errno
+            logHandler?("socketpair() failed errno=\(err)")
+            DispatchQueue.global().async { [weak self] in self?.reportExit(.deviceLost("socketpair() failed errno=\(err)")) }
             return
         }
         let tunFd = fds[0]  // owned by tun2proxy (--close-fd-on-drop true)
@@ -191,19 +231,15 @@ public final class TunnelEngine {
         // the program name. Without the leading "tun2proxy", the real first
         // flag is swallowed, the parse fails, and clap calls exit() — killing
         // the whole extension process with no crash log.
-        let cli = "tun2proxy --tun-fd \(tunFd) --close-fd-on-drop true --proxy \(proxyURL(redacted: false)) --dns virtual --max-sessions \(maxSessions) --udp-timeout \(udpTimeoutSeconds) --verbosity \(verbosity)"
-        logHandler?("tun2proxy starting: " + cli.replacingOccurrences(of: proxyURL(redacted: false), with: proxyURL(redacted: true)))
+        let realURL = proxyURL(redacted: false)
+        let cli = "tun2proxy --tun-fd \(tunFd) --close-fd-on-drop true --proxy \(realURL) --dns virtual --max-sessions \(maxSessions) --udp-timeout \(udpTimeoutSeconds) --tcp-mss \(Self.tcpMSS) --verbosity \(verbosity)"
+        logHandler?("tun2proxy starting: " + cli.replacingOccurrences(of: realURL, with: proxyURL(redacted: true)))
 
         let worker = Thread { [weak self] in
             let rc = cli.withCString { tun2proxy_run_with_cli_args($0, Self.tunnelMTU, true) }
             guard let self else { return }
             self.logHandler?("tun2proxy engine returned rc=\(rc)")
-            // Read the handler and the stopped flag together, so a concurrent stop() either wins outright (handler
-            // already nil'd, nothing fires) or loses outright (fires once). `stop()` nils it under the same lock.
-            self.stateLock.lock()
-            let handler = self.stopped ? nil : self.onEngineExit
-            self.stateLock.unlock()
-            handler?(rc)
+            self.reportExit(.engineReturned(rc))
         }
         worker.name = "com.Korporate1k.LocalProxy.tun2proxy"
         worker.qualityOfService = .userInitiated
@@ -215,6 +251,28 @@ public final class TunnelEngine {
         reader.qualityOfService = .userInitiated
         self.reader = reader
         reader.start()
+    }
+
+    /// Fires `onEngineExit` at most once, and never after `stop()`. The handler and the stopped flag are read
+    /// together under `stateLock`, so a concurrent stop() either wins outright (handler already nil'd, nothing
+    /// fires) or loses outright (fires once). `stop()` nils it under the same lock.
+    private func reportExit(_ exit: Exit) {
+        stateLock.lock()
+        let handler = (stopped || exitReported) ? nil : onEngineExit
+        if handler != nil {
+            exitReported = true
+            onEngineExit = nil
+        }
+        stateLock.unlock()
+        handler?(exit)
+    }
+
+    /// Whether `host` can be handed to tun2proxy at all: an IPv4 literal or a host name, i.e. nothing with ':'.
+    /// IPv6 proxy servers are not supported: the engine's `--proxy` parser (`ArgProxy::try_from`, args.rs) resolves
+    /// `url.host_str()`, which keeps the brackets of an IPv6 host, so resolution fails, and a failed --proxy parse
+    /// makes clap `exit()` the whole extension.
+    public static func canDial(host: String) -> Bool {
+        !host.isEmpty && !host.contains(":")
     }
 
     /// Stops the engine (returns `tun2proxy_run_with_cli_args` on its worker
@@ -279,6 +337,12 @@ public final class TunnelEngine {
             }
             if !keepGoing { break }
         }
+        // The loop ended without stop(): the device is gone (peer closed -> ECONNRESET, or a hard error). Nothing
+        // the engine produces can reach the tunnel any more, so a tunnel left up here would report Connected while
+        // carrying nothing. Report it like an engine exit; `reportExit` ignores it if stop() got there first.
+        if !isStopped {
+            reportExit(.deviceLost("read loop ended"))
+        }
     }
 
     /// One batch of packets from the engine: blocks for the first datagram, then takes only what is already
@@ -329,10 +393,14 @@ public final class TunnelEngine {
         return out
     }
 
-    /// `socks5://[user:pass@]host:port`, credentials percent-encoded (tun2proxy
-    /// percent-decodes them and performs the RFC 1929 sub-negotiation).
     private func proxyURL(redacted: Bool) -> String {
-        let hostPart = proxyHost.contains(":") ? "[\(proxyHost)]" : proxyHost
+        Self.proxyURL(host: proxyHost, port: proxyPort, username: username, password: password, redacted: redacted)
+    }
+
+    /// `socks5://[user:pass@]host:port`, with credentials percent-encoded (tun2proxy percent-decodes them and
+    /// performs the RFC 1929 sub-negotiation). `redacted` replaces the password with `***` for logging. Only call
+    /// with hosts that pass `canDial(host:)` (IPv4 literals and names; IPv6 is not supported).
+    static func proxyURL(host: String, port: UInt16, username: String?, password: String?, redacted: Bool) -> String {
         var auth = ""
         if let username, !username.isEmpty {
             let unreserved = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
@@ -340,6 +408,6 @@ public final class TunnelEngine {
             let pass = redacted ? "***" : ((password ?? "").addingPercentEncoding(withAllowedCharacters: unreserved) ?? "")
             auth = "\(user):\(pass)@"
         }
-        return "socks5://\(auth)\(hostPart):\(proxyPort)"
+        return "socks5://\(auth)\(host):\(port)"
     }
 }

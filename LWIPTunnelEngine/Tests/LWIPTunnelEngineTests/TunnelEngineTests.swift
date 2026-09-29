@@ -194,4 +194,40 @@ final class TunnelEngineTests: XCTestCase {
         engine.stop()
         engine.stop()
     }
+
+    // MARK: - Proxy URL (--proxy)
+
+    /// IPv4 and names must produce exactly the URL the engine has always been given.
+    func testProxyURLForIPv4IsUnchanged() {
+        XCTAssertEqual(TunnelEngine.proxyURL(host: "192.168.1.20", port: 1080, username: nil, password: nil, redacted: false),
+                       "socks5://192.168.1.20:1080")
+        XCTAssertEqual(TunnelEngine.proxyURL(host: "192.168.1.20", port: 1080, username: "", password: "x", redacted: false),
+                       "socks5://192.168.1.20:1080", "an empty username means no auth section")
+        XCTAssertEqual(TunnelEngine.proxyURL(host: "10.0.0.5", port: 443, username: "bob", password: "pw", redacted: false),
+                       "socks5://bob:pw@10.0.0.5:443")
+    }
+
+    func testProxyURLPercentEncodesCredentials() {
+        XCTAssertEqual(TunnelEngine.proxyURL(host: "10.0.0.5", port: 1080, username: "a b@c", password: "p:w/d?#%", redacted: false),
+                       "socks5://a%20b%40c:p%3Aw%2Fd%3F%23%25@10.0.0.5:1080")
+    }
+
+    func testProxyURLRedactionHidesPassword() {
+        let secret = "s3cr3t-pa55"
+        let url = TunnelEngine.proxyURL(host: "10.0.0.5", port: 1080, username: "bob", password: secret, redacted: true)
+        XCTAssertFalse(url.contains(secret), url)
+        XCTAssertTrue(url.hasPrefix("socks5://bob:***@"), url)
+    }
+
+    /// IPv6 proxy servers are not supported: tun2proxy's --proxy parser cannot take them and exit()s on failure.
+    func testCanDialAcceptsIPv4AndNamesButRefusesIPv6() {
+        XCTAssertTrue(TunnelEngine.canDial(host: "192.168.1.20"))
+        XCTAssertTrue(TunnelEngine.canDial(host: "proxy.example.com"))
+        XCTAssertFalse(TunnelEngine.canDial(host: "::1"))
+        XCTAssertFalse(TunnelEngine.canDial(host: "2001:db8::1"))
+        XCTAssertFalse(TunnelEngine.canDial(host: "fe80::1%en0"))
+        XCTAssertFalse(TunnelEngine.canDial(host: "[::1]"))
+        XCTAssertFalse(TunnelEngine.canDial(host: "host:1080"))
+        XCTAssertFalse(TunnelEngine.canDial(host: ""))
+    }
 }
