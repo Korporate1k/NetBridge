@@ -2783,3 +2783,280 @@ Owner: "scrap ip6 server", and chose to undo only the 0008 work. This supersedes
 - **Windows zips:** built before 0008, so they still match the current chain; no rebuild needed.
 - **The `windows-v1.1.0` GitHub release is still pending.** Its notes must **not** claim IPv6 servers. The upload was planned to wait for a live VM check; with the IPv6 test cancelled, that means the existing IPv4 VM results.
 - **Test servers** from the previous session (`:18099`, `[::]:18098`, `:18200`) are no longer running.
+
+## 2026-10-01 13:00 — HTTPS offload: the phone makes the TLS connection for plain-HTTP absolute-URI `https://` requests
+
+Branch `feature/tls-offload` (off `feature/macos-client`), uncommitted. Built for the PS5 downloader's new `tlsproxy://` mode (see `~/ps5-dl/HANDOFF.md`).
+
+- `NetBridge/Frontend.swift`: new `ProxyRequest.httpsForward`; `HTTPSOffload` parses `GET https://host/path` sent in the clear and rewrites it to origin form with an iOS-style header set (`Host`, `Accept: */*`, passthrough of `Range`/`If-Range`/`Cookie`/etc., `User-Agent` built from the device OS version in Safari form, `Accept-Language: en-US,en;q=0.9`, `Accept-Encoding: identity`, `Connection: keep-alive`).
+- `NetBridge/OutboundTransport.swift`: `dial(host:port:tlsServerName:)` and `NWParameters.tunedTCP(tlsServerName:)` add Network.framework TLS (SNI/verification name = the real host even when dialing a DoH/NAT64 address, ALPN `http/1.1`, system trust). Default argument keeps every existing caller unchanged.
+- `NetBridge/ConnectProxyHandler+Relay.swift`: handles the new case (mode name `HTTPS-offload`) through the existing dial/pipe path, so the rate limiter, daily cap and usage accounting apply as before.
+
+Deployed: development-signed Release build (team DS8AMC8BSV, bundle `com.Korporate1k.LocalProxy`, version 1.0 (5), project build number unchanged) installed in place on the iPhone 17 Pro Max (no uninstall, app data kept) and launched; proxy listening on 10.0.0.108:8081 within 1 s. An unsigned `build/Build/Products/Release-iphoneos/NetBridge.ipa` (1.0 (20261001.125729)) was also built via `scripts/build-ipa.sh`; it is not installed anywhere.
+
+Known gaps, stated plainly:
+- **ClientHello/header identity with iOS is not verified.** The Step-C reference capture (iPhone Safari vs the proxy's connection on a fingerprint-echo page) was not done; the header set and order come from CFNetwork/Safari defaults, not a capture.
+- Deliberate deviations: ALPN is `http/1.1` only (JA4's ALPN field will differ from Safari's `h2`); `Accept-Encoding` stays `identity` so a ranged download is never compressed.
+- The PS5→phone hop is plaintext on the local network.
+- No tests were run; the iOS Debug and Release builds compile. Not built for macOS (`Frontend.swift` falls back to a fixed UA there).
+- Observed once: PS5 item 8 went from 9.6–11.5 MB/s to 27–32 MB/s after this plus the ps5-dl Step-2 build; not repeated or interleaved.
+
+## 2026-10-04 — tvOS client (build-verified, not yet run on a device)
+
+Client-only Apple TV app (no proxy listener/relay), reusing the iOS/macOS client stack. Spec: `project-tv.yml`
+(`xcodegen generate --spec project-tv.yml` -> `NetBridgeTV.xcodeproj`, same pattern as the Mac project). Targets:
+`NetBridgeTV` (app, sources in `NetBridgeTV/Sources`) and `NetBridgeTVTunnel` (extension, compiles the shared
+`NetBridgeTunnel/PacketTunnelProvider.swift`). Bundle IDs are the same as iOS/macOS because `ClientTunnelManager`
+hard-codes the extension's ID. tvOS 17.0 minimum (`NEPacketTunnelProvider` is tvos(17.0) in the SDK).
+
+- **Engine:** `scripts/build-tun2proxy-apple.sh` now builds five slices (adds `tvos-arm64`, `tvos-arm64-simulator`).
+  The tvOS Rust targets have prebuilt std on stable; no nightly/`-Zbuild-std` needed. The tvOS slices use the "ios"
+  tree (no 0006b 64 KB window). New patches: `0008a-ipstack-tvos` (Darwin tun-framing consts were gated to
+  macos/ios only: compile error) and `0008b-tun2proxy-tvos` (`packet_information` was gated to ios/macos only:
+  silent framing difference). The xcframework was reinstalled with `--install`; the previous copy is
+  `build/tun2proxy-apple/xcframework-backup-20261004-033837`. The iOS/macOS slices were rebuilt from source too
+  (not byte-identical to the old ones: sizes differ by ~200 bytes).
+- **Shared code:** `ClientTunnelManager`'s iOS-only failure-reason gates and the macOS stats gates (`requestStats`,
+  `connectedDate`; provider `TunnelCounters`/`handleAppMessage`) now also cover tvOS. Keychain gates are unchanged:
+  tvOS takes the iOS path. `PacketTunnelProvider` has no UDP-specific platform code; UDP (SOCKS5 UDP ASSOCIATE) is
+  the engine's, so tvOS inherits iOS behaviour. The screen shows the probe's `udpRelayed`.
+- **Pairing:** type/paste the `socks5://` link (no camera on Apple TV). The saved server is reloaded from the VPN
+  preferences (`savedConfiguration()`), not UserDefaults, because tvOS may purge app storage.
+- **Verified:** tvOS Simulator + tvOS device builds (unsigned, `ARCHS=arm64`), macOS build, iOS device build and
+  iOS simulator build (arm64). Rebuilt `build-ipa.sh` IPA 1.0 (20261004.034252). A generic iOS/tvOS *simulator*
+  destination also builds x86_64 and fails to link against the arm64-only slices; pin `ARCHS=arm64`.
+- **NOT verified:** nothing has run on an Apple TV. Still to do: tunnel up on a physical device, UDP test through
+  the tunnel (e.g. 1.1.1.1:53 by IP literal), extension memory under sustained load, signing/provisioning (Network
+  Extension for tvOS in the portal), tvOS app icon / Top Shelf assets (none yet), and the Pro-gating decision
+  (the tvOS client currently has no StoreKit/trial gating).
+
+## 2026-10-04 (later) — tvOS: free, no Pro gating
+
+Owner decision: the tvOS client is free, with no StoreKit/trial/Pro gating. This is what the code does today
+(`NetBridgeTV` compiles no `PurchaseManager`/`TrialManager`), so nothing needs to change. This closes the
+"Pro-gating decision" item in the section above.
+
+## 2026-10-04 (later still) — tvOS app icon + Top Shelf assets
+
+`NetBridgeTV/Assets.xcassets` ("App Icon & Top Shelf Image" brand assets) is generated by
+`python3 scripts/gen-tvos-icons.py` (needs Pillow) and wired into `project-tv.yml`
+(`ASSETCATALOG_COMPILER_APPICON_NAME`). The iOS/macOS icons are a plain #1E40AF -> #0D9488 gradient with no glyph;
+tvOS needs 2+ parallax layers, so Back = that gradient and Front = a white bridge mark (arch, deck, piers, hangers)
+drawn by `draw_glyph` — a new design element, easy to replace. Sizes: App Store 1280x768, app 400x240 @1x/@2x,
+Top Shelf 1920x720 and wide 2320x720 @1x/@2x. Both tvOS builds compile the catalog (actool, no warnings).
+Not yet looked at on a real Apple TV (parallax/focus rendering).
+
+## 2026-10-04 (icons) — one bridge-mark logo on every Apple platform
+
+`scripts/gen-icons.py` (replaces `gen-tvos-icons.py`, same `python3 scripts/gen-icons.py`, needs Pillow) now renders the
+same design everywhere: white bridge mark on the #1E40AF -> #0D9488 gradient. It overwrites the iOS
+`AppIcon.appiconset/icon-1024.png` (opaque, no alpha), the macOS `icon_{16,32,64,128,256,512,1024}.png` (downscaled
+from the 1024 master; the 16/32 px sizes are soft but still read as a bridge) and regenerates the tvOS catalog. The
+iOS/macOS `Contents.json` files are unchanged. The previous icons were the plain gradient with no mark (recoverable
+from git). Windows is untouched: it has no logo asset, only a state-coloured ring drawn in code for the tray.
+Rebuilt `build-ipa.sh` IPA 1.0 (20261004.043633) and verified macOS + tvOS simulator builds. The mark itself is a new
+design element chosen here, not an existing brand asset.
+
+## 2026-10-04 (OpenWrt) — router client: plan approved, Stage 2 (engine build) done
+
+Goal (hypothetical, no router bought yet): an OpenWrt router whose iPhone is plugged in by USB (tether link) and which
+sends all LAN traffic through the iPhone's NetBridge proxy via tun2proxy. Recommended hardware: aarch64 MediaTek
+Filogic (GL.iNet GL-MT3000 first, GL-MT6000 for headroom); avoid 32-bit MIPS. Staged plan: 0 baseline tether,
+1 prove the router can reach the proxy (TCP + UDP), 2 build the engine, 3 OpenWrt integration (procd init, UCI,
+routing, firewall, dnsmasq), 4 real-SOCKS5 watchdog + fail-closed/fallback policy, 5 soak/compare.
+
+- **Done (Stage 2):** `scripts/build-tun2proxy-openwrt.sh` -> `build/tun2proxy-openwrt/tun2proxy-bin`, a static stripped
+  aarch64-musl ELF (6.5 MB) from the same patched tree (0006b included). Needs `cargo-zigbuild` (installed in
+  `~/.cargo/bin`) and zig from the pip `ziglang` package in `build/openwrt-tools/venv` (git-ignored). Not executed on
+  any aarch64 Linux yet.
+- The patch list now lives once in `scripts/lib/tun2proxy-tree.sh` (`prepare_tree`), sourced by both
+  `build-tun2proxy-apple.sh` and the new OpenWrt script. Re-ran the Apple script (staging only, not `--install`):
+  exit 0, five slices, cbindgen header unchanged.
+- **Known risks:** the iPhone server app is suspended when not foreground (a suspended relay still accepts TCP, so
+  the watchdog must do a real SOCKS5 greeting); the free-tier daily cap would cut off the whole LAN; IPv6 is not
+  carried (turn it off on the LAN); carrier terms may treat router sharing as tethering (the owner's call).
+- **Not done:** Stages 0, 1 and 3-5; they need the physical router. Open: fail-closed vs fall-back on proxy failure,
+  router budget, whether the server is on Pro.
+
+## 2026-10-04 (OpenWrt, test box) — Linux test rig prep
+
+Decision: test the router engine on a Linux box over passwordless SSH (the owner's "PS4 running Linux", x86-64) before
+any router exists; an aarch64 OpenWrt VM on the Mac (UTM / Virtualization framework) is the fallback and the only way
+to run the aarch64 binary here. `scripts/build-tun2proxy-openwrt.sh` now takes `TARGET=` (default
+`aarch64-unknown-linux-musl` -> `build/tun2proxy-openwrt/tun2proxy-bin`; `TARGET=x86_64-unknown-linux-musl` ->
+`tun2proxy-bin-x86_64-unknown-linux-musl`, 7.0 MB static, built, not yet run anywhere). Created a dedicated key
+`~/.ssh/id_ed25519_testbox` (no passphrase, so logins never prompt; keep it for this test box only). Still missing: the
+box's host/IP and login user, installing the public key on it (needs the box password once, by the owner), a
+`Host testbox` entry in `~/.ssh/config`, and the read-only recon (tun device, ip/iptables/nft, netns, root/sudo).
+Nothing has been run on the test box yet.
+
+## 2026-10-04 (OpenWrt, test box) — engine verified on Linux: 10/10 on the namespace rig
+
+Test box = the owner's PS4 running CachyOS (Linux 6.15.4, x86-64, 8 cores, passwordless sudo, UFW active with INPUT
+policy DROP). Reached via `ssh testbox` (alias in `~/.ssh/config`, key `~/.ssh/id_ed25519_testbox`, 10.0.0.77; the
+box's login shell is fish, so send scripts through `bash -s`). The patched x86-64 `tun2proxy-bin` runs there.
+
+- **Rig:** `NetBridgeOpenWrt/test-rig/rig.sh up|test|down|status` (+ `udp_echo.py`, and
+  `scripts/socks5_test_server.py`, which gained `--host-map NAME=IP`). Three namespaces: nblan (LAN client) ->
+  nbrouter (forwarding + tun2proxy + dnsmasq, default route into the tun) -> nbphone (stand-in proxy + local "internet"
+  at 203.0.113.10: HTTP :80, UDP echo :9999). Works offline; nothing touches the host's routes, firewall, resolv.conf
+  or docker. Scratch copy lives in `~/nbrig` on the box; `rig.sh down` removes everything it creates.
+- **Result (all PASS, proxy log confirms each):** TCP by IP literal; dnsmasq -> virtual DNS (198.18/15); TCP by name
+  (engine sends the hostname in SOCKS5 CONNECT); real UDP through UDP ASSOCIATE on a non-DNS port; proxy down =>
+  LAN gets no connectivity (fails closed by construction: only default route is the tun); recovery when the proxy
+  returns; host state unchanged before/after.
+- **Lessons:** (1) a first attempt put the proxy in the host namespace and UFW dropped the traffic; the rig now avoids
+  host INPUT entirely. (2) `getent`/curl name lookups on systemd boxes go to the host's resolver over a shared socket,
+  so DNS tests must query dnsmasq directly. (3) An early UDP "pass" was a false positive (port-53 queries are answered
+  by the engine's virtual DNS); the UDP test now uses port 9999. (4) iptables-nft/nft counters change constantly, so
+  state hashes must strip them.
+- **Not proven:** the aarch64 router binary (never executed; this rig ran the x86-64 build), OpenWrt's own userland
+  (procd/UCI/fw4), iPhone USB tethering, Wi-Fi, router CPU limits, the real iPhone app. Fail-closed here is inherent
+  to the routing; the fall-back-to-tethering option and the real SOCKS5 watchdog (Stage 4) are still to build.
+- The PS4 already runs a root `python -u /relay.py` on 127.0.0.1:1080 (started Oct 2, not part of this work); untouched.
+
+## 2026-10-04 (OpenWrt) — router client built and tested on Linux; hardware untested
+
+Everything for the router client that doesn't need the physical router is built, in `NetBridgeOpenWrt/` (see its README):
+`nb-probe/` (std-only Rust SOCKS5 health probe, port of `Socks5Probe`; `test_probe.py` 10/10), `files/` (procd init script,
+UCI config, `ctl` routing + failure-policy + watchdog, `netbridge` CLI), `install.sh`, `test-rig/`, and
+`scripts/build-openwrt-package.sh` (-> `build/netbridge-openwrt-<arch>.tar.gz`; aarch64 2.7 MB, x86_64 2.9 MB).
+
+- **Policy:** `block` (default; blackhole /1 routes keep winning if the engine dies, so no leak) or `fallback` (plain WAN while
+  the proxy is down). IPv6 is blackholed. LAN traffic enters the tun via 0/1 + 128/1 routes (default route untouched).
+- **Tests, on the PS4 (CachyOS) test box:** namespace rig `rig.sh` 30/30; OpenWrt 24.10.8 container
+  `owrt-docker-test.sh` 28/28 (procd supervision, UCI/dnsmasq/fw4 wiring, idempotent restart, exact config restore on stop).
+- **Bugs the tests found:** (1) `ctl` never brought the tun up, so with the block policy a healthy router would have been
+  blocked entirely (the rig masked it by bringing the tun up itself; fixed, mask removed); (2) OpenWrt's busybox `ip` has no
+  `route get`, so pinning the proxy silently failed (added a default-route fallback, `NB_NO_ROUTE_GET=1` forces it in tests);
+  (3) test flaws: `pgrep -f` self-match, fragile `diff -`, a stale status file satisfying a wait.
+- **Environment notes:** procd can't create dnsmasq's cgroup in an unprivileged container, so dnsmasq is checked from its
+  generated config and run by hand there (not a product bug). The PS4 already runs a real NetBridge client in docker
+  (`netbridge-client`) plus pihole/tailscale; the tests left those untouched and removed their own containers/images.
+- **Still not proven:** the aarch64 binaries have never executed (tests used x86-64); iPhone USB tethering (ipheth/usbmuxd),
+  Wi-Fi, router CPU/throughput, GL.iNet stock-firmware specifics (SSH, tether page, `ip`/`nft` flavour), the real iPhone app
+  (suspension, daily cap). Next, with a router: README steps 1-3, then `netbridge status` and the soak/jitter comparison.
+
+## 2026-10-04 (OpenWrt) — code-review fixes; suites now 42/42 (rig) and 38/38 (OpenWrt container)
+
+A four-way review (Swift, Rust, OpenWrt shell, build/test) of this session's work found no critical issues. Fixed:
+
+- **Leak windows (high):** `block` only held while the watchdog ran. Now `ctl guard-up` installs the guard (IPv4 /1
+  blackholes for `block`, IPv6 blackholes always) synchronously at the top of `start_service`; the new
+  `/etc/init.d/netbridge-guard` (START=11) installs it early at boot; a restart/reload (`$action` from rc.common) keeps the
+  guard, DNS and firewall; only a real stop or `enabled=0` tears down (a `$STATE/stopping` marker tells the exiting
+  watchdog to remove the guard too). The watchdog handles SIGTERM at once (probe runs in the background).
+- **Pin recovery (medium):** with tun routes active, `ip route get` resolved a lost pin into the tun. Now falls back to the
+  default route, and status reports `pin_src=get|default`. Testing it exposed a worse bug: while unpinned, the engine's own
+  connections to the proxy entered the engine again, recursively, so LAN traffic kept failing after the pin returned. Fix:
+  a permanent `unreachable <proxy>/32 metric 2000` under the pin.
+- **DNS restore (medium):** the user's whole dnsmasq server list (and noresolv) is saved and restored; while active, the
+  virtual-DNS address is the only upstream.
+- **install.sh:** ELF-machine vs `uname -m` check, staged extraction, config never overwritten, rename-replace (works while
+  the engine runs), enables netbridge-guard, restarts a running service.
+- **gen-icons.py:** atomic PNG writes; tvOS brand assets built in a temp dir and swapped; other catalog assets left alone.
+- **Tests that could pass vacuously:** freshness-checked status waits, baseline host state taken before `up` (now incl. IPv6
+  routes and ip rules), anchored proxy-log matches, complete leftover checks (incl. unreachable/IPv6), proof of the pin
+  path, pgrep positive control, guard sampled every 0.1 s across a restart, user DNS (8.8.8.8 + 9.9.9.9) preserved,
+  failing `up` cleans up; `test_probe.py` fails loudly if its server can't start and asserts reasons.
+- Also: strict IPv4 validation, numeric interval/failure settings, `\` added to urlenc.
+
+**Not changed (needs the owner):** the Keychain access group. The committed code (before this session) passes the
+unprefixed literal `com.Korporate1k.LocalProxy.shared` on iOS (and now tvOS), while the 2026-09 notes above say the fix was
+to omit it. Either the code regressed or the notes are stale; it affects the shipping iPhone client and needs a device test
+with a password-protected server. Low-severity tvOS/nb-probe items from the review are also still open (credential removal
+for the same host:port, double-tap Connect on first run, stale health while reasserting, `--timeout inf`, unescaped detail).
+
+## 2026-10-04 (review, low items) — all fixed; probe 19/19 (macOS + Linux musl), rig 42/42, OpenWrt container 39/39
+
+- **tvOS model:** credentials can be removed (a link without `user@` now means no credentials; same username + no
+  password keeps the saved one; a hint under the field says so); Connect is disabled while a save is in flight
+  (`isSaving`), so a double press on first run can't create a duplicate VPN configuration; while reasserting the health
+  shows "Checking…" and counters reset instead of freezing. Both tvOS builds pass.
+- **nb-probe:** `--timeout` must be finite and 0.1–3600 (inf/nan/huge used to abort); HOST must be an IP address (a DNS
+  lookup can't be bounded by the deadline); `detail` is sanitised (one line, no quotes/backslashes) for the watchdog's sed;
+  kernel ETIMEDOUT gets its own message; non-UTF-8 args/env no longer abort. Tests now also run on Linux with the shipped
+  musl binary.
+- **Router:** IPv6 guard is `unreachable` (fast IPv4 fallback for LAN devices) instead of `blackhole`.
+- **Build/test tools:** `build-tun2proxy-apple.sh` rejects unknown arguments (`--instal` used to silently only stage);
+  `build-tun2proxy-openwrt.sh` asserts a static binary for the right CPU; `socks5_test_server.py --host-map` rejects
+  malformed values. Leftover-route checks match only NetBridge's own prefixes (OpenWrt keeps its own
+  `unreachable fdXX::/48` ULA route, which is not ours and is never touched).
+- **Still open:** the Keychain access-group question (owner decision + device test); stale virtual-DNS answers after an
+  engine respawn or a fallback switch (clients keep cached 198.18.x.x answers until their TTL); the engine's proxy URL,
+  password included, is still in its argv (tun2proxy has no other way to take it; documented in the README).
+
+## 2026-10-04 (OpenWrt) — stale virtual DNS fixed; rig 50/50, OpenWrt container 42/42
+
+The engine answers DNS with virtual addresses (198.18.0.0/15) and forgets them on restart; devices and dnsmasq kept stale
+answers (up to the engine's 300 s TTL), and a restarted engine re-issued the same addresses in order, so a stale one could
+point at a different site. Now:
+- dnsmasq `max_ttl` / `max_cache_ttl` = 30 (UCI, saved and restored like the other DNS settings);
+- new wrapper `/usr/libexec/netbridge/engine` alternates `--virtual-dns-pool` between 198.18.0.0/16 and 198.19.0.0/16 on
+  every (re)start, so a stale address can't collide with a new mapping (verified: it fails, never reaches a site);
+- `ctl` flushes the DNS cache (`NB_DNS_FLUSH`, default `killall -HUP dnsmasq`) when the engine restarts (tun ifindex
+  changes) and when the fallback routing switches; in fallback-down it adds `unreachable 198.18.0.0/15` so stale addresses
+  fail at once (measured 28 ms) and removes it when the tunnel is back.
+Tests: rig checks TTL <= 30, the post-restart answer comes from the other half (which also proves the flush), the old
+address doesn't reach a site, fast failure in fallback; the container checks the generated dnsmasq caps, procd respawn on
+the other half + flush, and exact (semantic) restore of the user's DNS settings incl. max_ttl. The container's config
+comparison is now `uci show | sort` (uci moves a re-added list to the end of its section; values and list order still
+compared exactly). Remaining limit: an app with its own longer DNS cache gets errors (not the wrong site) until it re-resolves.
+Still open: the Keychain access-group question; the proxy password in the engine's argv.
+
+## 2026-10-04 (OpenWrt) — GL-SFT1200 (Opal, 32-bit MIPS, OpenWrt 18.06) support built; emulation + container tested
+
+The SFT1200 has a SiFlower SF19A28 (dual-core 1 GHz MIPS32r2, little-endian), 128 MB RAM, USB 2.0 and GL's OpenWrt 18.06
+firmware. Added as a second supported model (the MT3000 stays the recommendation):
+- **Engine:** `TARGET=mipsel-unknown-linux-musl scripts/build-openwrt-package.sh` -> `build/netbridge-openwrt-mipsel.tar.gz`
+  (3.2 MB; engine 9.7 MB, static-pie MIPS32 LSB; probe 0.5 MB). Rust's mipsel target is tier 3, so nightly +
+  `-Zbuild-std=std,panic_abort`, linked with **zig 0.14.1** (`build/openwrt-tools/venv-zig0141`): zig 0.13 has no
+  soft-float musl for mipsel and 0.16 leaves its new libc internals unresolved. New patch
+  `0009-no-64bit-atomics.patch` (tun2proxy's two `std` AtomicU64 statics -> `portable_atomic::AtomicU64` with `fallback`)
+  is applied ONLY to the MIPS tree (`prepare_tree`'s new 3rd argument); the Apple/Windows/aarch64 engines are unchanged
+  (Apple staging build re-verified, cbindgen header unchanged, no portable_atomic in its trees).
+- **Emulation:** `test-rig/mips-qemu-test.sh` runs the MIPS binaries under qemu-mipsel in a throwaway Alpine container
+  (nothing installed on the host): probe suite 19/19, tun creation, virtual DNS, TCP by hostname, real UDP via the proxy
+  (8/8).
+- **OpenWrt 18.06:** `OWRT_TAG=x86-64-18.06.9 owrt-docker-test.sh`: 42 passed, 0 failed, 1 skipped. Fixed: 18.06's dnsmasq
+  init has no max_ttl/max_cache_ttl, so the 30 s caps now go into `<confdir>/netbridge-ttl.conf` (rewritten each start,
+  removed on stop) when UCI can't. Skipped: fw3 prints no rules at all inside that container (not even the lan zone), so
+  the nbtun zone's iptables rendering is unverified on 18.06 (the UCI zone config and its restore are verified). 24.10.8
+  still 43/43; namespace rig still 50/50.
+- **install.sh:** reads e_machine + EI_DATA (MIPS little-endian vs `uname -m` = mips) and runs the staged engine's
+  `--version` on the router before installing anything (catches byte-order/float-ABI mismatches).
+- **Unproven until a device:** real speed on 1 GHz MIPS, iPhone USB tethering on GL's 18.06 firmware, `kmod-tun` presence,
+  fw3 rule rendering, and whether GL's web UI rewrites the dnsmasq/firewall settings NetBridge applies.
+
+## 2026-10-04 (OpenWrt) — universal installer: NetBridgeOpenWrt/setup-router.sh
+
+One command for any supported router: `NetBridgeOpenWrt/setup-router.sh [router-ip]` (default 192.168.8.1). Connects once
+over SSH (ControlMaster, so at most one password prompt; install.sh now takes `NB_SSH_OPTS`), detects CPU + byte order
+(`uname -m` + EI_DATA of the router's /bin/busybox) and firmware, checks /dev/net/tun (offers `opkg install kmod-tun`) and
+free space, builds the matching package only if missing or older than its sources (repackages without rebuilding the engine
+when only scripts changed), installs via install.sh, asks phone address (default: router's default-route gateway), port,
+username, password (read -s or $NB_PASS; sent over the SSH session's stdin, never argv/history) and policy, starts it, and
+waits for the watchdog's verdict with plain explanations (auth refused / no SOCKS5 answer). `--yes` for unattended runs,
+`--uninstall` reverses everything. README's install section now leads with it.
+- Tests: `test-rig/setup-router-unit.sh` 22/22 (mapping, validation, quoting a value with quotes/$/;rm through sh);
+  `test-rig/setup-router-test.sh` 15/15 against an OpenWrt 24.10.8 container (runner container shares the router's netns
+  and reaches its dropbear on 127.0.0.1:22): fresh install healthy, re-run keeps settings/password, wrong password explained
+  with non-zero exit, uninstall removes everything and restores dhcp/firewall exactly.
+- Bugs the e2e test found in the script itself: (1) it read the previous watchdog's stale `state=healthy` after a restart
+  (fixed: status file removed before restart); (2) `$0`-based self-location broke when sourced (fixed: BASH_SOURCE).
+  Harness lessons: OpenWrt's own firewall drops WAN-side SSH and its netifd can take the container's eth0, so the runner
+  joins the router's netns; the runner image is prepared on the normal network first (that netns has no internet); the
+  harness now aborts on a failed SSH precondition instead of reporting vacuous passes.
+- Not run against real hardware yet (needs a router); MIPS/aarch64 detection is unit-tested, the e2e test is x86-64.
+
+## 2026-10-04 — router client split into its own private repo
+
+`https://github.com/Korporate1k/netbridge-openwrt` (private, branch main, first commit 731df5d), local clone at
+`~/Desktop/netbridge-openwrt`. It holds only the router client: `NetBridgeOpenWrt/`, the OpenWrt build scripts
+(`scripts/build-openwrt-package.sh`, `build-tun2proxy-openwrt.sh`, `lib/tun2proxy-tree.sh`, `socks5_test_server.py`) and
+`LWIPTunnelEngine/patches/` (paths kept so every script works unchanged), plus a top-level README and .gitignore. No app
+code, HANDOFF, PDFs or build output; scrubbed for tokens/keys/Team ID/personal paths before the first commit. Verified
+standalone: unit tests 22/22 and a full aarch64 package build from the new clone (its `build/openwrt-tools` is a symlink to
+this project's toolchain folder; git-ignored).
+**The router client now exists in two places.** Until the owner picks one, treat `netbridge-openwrt` as the source of truth
+for router work and copy changes back here (or delete `NetBridgeOpenWrt/` here once nothing else needs it).
