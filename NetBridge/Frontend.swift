@@ -27,6 +27,85 @@ enum ProxyRequest {
     /// forwarded to the origin verbatim, and the origin's real response is
     /// what flows back once relaying starts.
     case httpForward(host: String, port: UInt16, rawRequest: Data)
+    /// An `https://` absolute-URI request sent to us in the clear: this device
+    /// makes the TLS connection to the origin itself (Network.framework, i.e.
+    /// the iOS ClientHello) and relays the plaintext response back. `rawRequest`
+    /// is already rewritten to origin-form with an iOS-style header set — see
+    /// `HTTPSOffload`.
+    case httpsForward(host: String, port: UInt16, rawRequest: Data)
+}
+
+/// Rewrites a client's `GET https://host/path HTTP/1.1` request into what an iOS
+/// HTTP client would send to the origin: origin-form request line and the
+/// CFNetwork-style header set/order. Headers that carry meaning for the transfer
+/// (`Range`, `If-Range`, `Cookie`, `Authorization`, `Referer`, body headers ...)
+/// pass through unchanged; the client's own `User-Agent`, `Accept`,
+/// `Accept-Language`, `Connection` and proxy headers are replaced.
+///
+/// `Accept-Encoding` stays `identity` on purpose: the client writes the body
+/// straight to disk and never decodes it, and a compressed response to a
+/// `Range` request would corrupt the file.
+enum HTTPSOffload {
+    private static let crlfcrlf = Data("\r\n\r\n".utf8)
+    private static let replaced: Set<String> = [
+        "host", "user-agent", "accept", "accept-language", "accept-encoding",
+        "connection", "proxy-connection", "proxy-authorization", "keep-alive",
+    ]
+
+    static var userAgent: String {
+        #if os(iOS)
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let os = "\(v.majorVersion)_\(v.minorVersion)"
+        let safari = "\(v.majorVersion).\(v.minorVersion)"
+        #else
+        let os = "18_6", safari = "18.6"
+        #endif
+        return "Mozilla/5.0 (iPhone; CPU iPhone OS \(os) like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safari) Mobile/15E148 Safari/604.1"
+    }
+
+    /// `nil` if `block` is not a parseable absolute-form `https://` request.
+    static func parse(_ block: Data) -> (host: String, port: UInt16)? {
+        guard let line = requestLine(block),
+              line.target.lowercased().hasPrefix("https://"),
+              let comps = URLComponents(string: line.target),
+              let host = comps.host, !host.isEmpty,
+              let port = UInt16(exactly: comps.port ?? 443) else { return nil }
+        return (host, port)
+    }
+
+    static func rewrite(_ block: Data) -> Data {
+        guard let end = block.range(of: crlfcrlf),
+              let head = String(data: block[..<end.lowerBound], encoding: .utf8),
+              let line = requestLine(block),
+              let comps = URLComponents(string: line.target), let host = comps.host else { return block }
+        var path = comps.percentEncodedPath.isEmpty ? "/" : comps.percentEncodedPath
+        if let q = comps.percentEncodedQuery { path += "?" + q }
+        let port = comps.port ?? 443
+        let hostName = host.contains(":") ? "[\(host)]" : host
+        let hostHeader = port == 443 ? hostName : "\(hostName):\(port)"
+
+        var out = "\(line.method) \(path) \(line.version)\r\n"
+        out += "Host: \(hostHeader)\r\nAccept: */*\r\n"
+        for header in head.components(separatedBy: "\r\n").dropFirst() where !header.isEmpty {
+            guard let colon = header.firstIndex(of: ":") else { continue }
+            if replaced.contains(header[..<colon].lowercased()) { continue }
+            out += header + "\r\n"
+        }
+        out += "User-Agent: \(userAgent)\r\nAccept-Language: en-US,en;q=0.9\r\n"
+        out += "Accept-Encoding: identity\r\nConnection: keep-alive\r\n\r\n"
+        var data = Data(out.utf8)
+        data.append(block[end.upperBound...])   // any body bytes read along with the headers
+        return data
+    }
+
+    private static func requestLine(_ block: Data) -> (method: String, target: String, version: String)? {
+        guard let end = block.range(of: crlfcrlf),
+              let first = String(data: block[..<end.lowerBound], encoding: .utf8)?
+                .components(separatedBy: "\r\n").first else { return nil }
+        let parts = first.split(separator: " ", omittingEmptySubsequences: true)
+        guard parts.count == 3, parts[0] != "CONNECT" else { return nil }
+        return (String(parts[0]), String(parts[1]), String(parts[2]))
+    }
 }
 
 /// HTTP CONNECT / plain-HTTP absolute-URI request-line parsing, moved out of
@@ -48,6 +127,9 @@ enum HTTPFrontend {
                 failureReply: nil
             )
             return .connect(host: target.host, port: target.port, earlyData: dataAfterHeaders(in: headerBlock), meta: meta)
+        }
+        if let target = HTTPSOffload.parse(headerBlock) {
+            return .httpsForward(host: target.host, port: target.port, rawRequest: HTTPSOffload.rewrite(headerBlock))
         }
         if let target = parseAbsoluteURI(from: headerBlock) {
             return .httpForward(host: target.host, port: target.port, rawRequest: headerBlock)

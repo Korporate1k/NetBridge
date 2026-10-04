@@ -4,8 +4,12 @@ import Network
 /// A direct TCP `NWConnection` using `.tunedTCP()` (below) instead of the bare
 /// `.tcp` preset for throughput.
 struct DirectTCPTransport {
-    func dial(host: String, port: NWEndpoint.Port) -> NWConnection {
-        let parameters = NWParameters.tunedTCP()
+    /// `tlsServerName` non-nil: run TLS to the origin with Network.framework (the
+    /// iOS ClientHello, ALPN `http/1.1`, system trust). It is the SNI and the
+    /// name the certificate is checked against, so it stays the real hostname even
+    /// when `host` is an IP from DoH or NAT64.
+    func dial(host: String, port: NWEndpoint.Port, tlsServerName: String? = nil) -> NWConnection {
+        let parameters = NWParameters.tunedTCP(tlsServerName: tlsServerName)
         // Outbound-only: this app IS the proxy for its own clients, so its
         // own outbound dials should never be intercepted by some unrelated
         // system proxy configuration — only meaningful for the dialing side,
@@ -32,7 +36,7 @@ extension NWParameters {
     /// inbound listener (`ProxyServer`) and every outbound dial
     /// (`DirectTCPTransport`, above). Replaces the bare `.tcp` preset both
     /// used before.
-    static func tunedTCP() -> NWParameters {
+    static func tunedTCP(tlsServerName: String? = nil) -> NWParameters {
         let tcpOptions = NWProtocolTCP.Options()
 
         // Nagle's algorithm delays small writes to coalesce them into fewer,
@@ -53,7 +57,14 @@ extension NWParameters {
         // relayed chunk sizes involved.
         tcpOptions.disableAckStretching = true
 
-        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        var tlsOptions: NWProtocolTLS.Options?
+        if let name = tlsServerName {
+            let tls = NWProtocolTLS.Options()
+            sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, name)
+            sec_protocol_options_add_tls_application_protocol(tls.securityProtocolOptions, "http/1.1")
+            tlsOptions = tls
+        }
+        let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
 
         // A proxy shouldn't second-guess which path the OS already chose —
         // refusing "expensive" paths (cellular, personal hotspot, ...) would

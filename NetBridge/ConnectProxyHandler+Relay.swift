@@ -13,6 +13,7 @@ extension Tunnel {
         switch request {
         case .connect(let h, let p, _, _): host = h; port = p
         case .httpForward(let h, let p, _): host = h; port = p
+        case .httpsForward(let h, let p, _): host = h; port = p
         }
         guard let serverPort = NWEndpoint.Port(rawValue: port) else {
             sendErrorAndClose()
@@ -36,6 +37,9 @@ extension Tunnel {
         case .httpForward:
             modeName = "HTTP-forward"
             onActivity?("HTTP forward \(host):\(port)")
+        case .httpsForward:
+            modeName = "HTTPS-offload"
+            onActivity?("HTTPS offload \(host):\(port)")
         }
         func startDial() {
             // Resolved once (if DoH is enabled) and reused across retry attempts,
@@ -101,7 +105,9 @@ extension Tunnel {
     private static var pinnedInterfaceWaitSeconds: Double { 5 }
 
     private func connectOutbound(dialHost: String, host: String, port: NWEndpoint.Port, request: ProxyRequest, attempt: Int) {
-        let server = transport.dial(host: dialHost, port: port)
+        var tlsServerName: String?
+        if case .httpsForward = request { tlsServerName = host }
+        let server = transport.dial(host: dialHost, port: port, tlsServerName: tlsServerName)
         self.server = server
         DebugLog.important("server", tunnel: id, "dialing \(host):\(port) mode=\(modeName) attempt=\(attempt) openTunnels=\(openTunnelCount())")
 
@@ -167,7 +173,7 @@ extension Tunnel {
                             self.pipe(server: server, earlyData: earlyData)
                         }
                     )
-                case .httpForward(_, _, let rawRequest):
+                case .httpForward(_, _, let rawRequest), .httpsForward(_, _, let rawRequest):
                     self.sendInitial(rawRequest, to: server, antiDPI: false) { [weak self] error in
                         guard let self = self else { return }
                         DebugLog.debug("server", tunnel: self.id, "forwarded request bytes=\(rawRequest.count) error=\(ErrorDescription.describe(error))")
