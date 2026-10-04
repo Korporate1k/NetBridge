@@ -3072,3 +3072,11 @@ for router work and copy changes back here (or delete `NetBridgeOpenWrt/` here o
 - **Unsigned IPA rebuilt:** `scripts/build-ipa.sh` with timestamp 20261004.092059, 26M.
 - **Not uploaded:** none of the archives were uploaded to App Store Connect per the plan; owner will upload from Organizer.
 - **Next:** update build numbers in project files only after a TestFlight/App Store upload completes.
+
+## 2026-10-04 (tvOS UIRequiredDeviceCapabilities) — arm64 capability added for App Store
+
+- **Issue:** tvOS archive failed validation with "Your binary 'com.Korporate1k.LocalProxy.Tunnel' has a 64-bit architecture slice, so you must include the "arm64" value for UIRequiredDeviceCapabilities key".
+- **Fix:** Added `<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>` to:
+  - `NetBridgeTV/Info.plist` (main app)
+  - `NetBridgeTVTunnel/Info.plist` (tunnel extension)
+- **Re-archived:** tvOS build 1 now succeeds validation. Both app and extension bundle include the arm64 capability.
