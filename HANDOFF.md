@@ -3060,3 +3060,15 @@ standalone: unit tests 22/22 and a full aarch64 package build from the new clone
 this project's toolchain folder; git-ignored).
 **The router client now exists in two places.** Until the owner picks one, treat `netbridge-openwrt` as the source of truth
 for router work and copy changes back here (or delete `NetBridgeOpenWrt/` here once nothing else needs it).
+
+## 2026-10-04 (archives) — feature/tls-offload pushed to main, iOS/macOS/tvOS archived
+
+- **Push:** merged `origin/main` (Windows README commit) into the local branch to align histories, then force-pushed `feature/tls-offload` to `origin/main`. This brings in all stacked work: macOS client, tvOS client, Windows client, OpenWrt client, and the TLS offload feature.
+- **Build numbers bumped and committed:** iOS 5 → 6, macOS 1 → 2, tvOS stays 1 (never been archived).
+- **All archives succeeded:**
+  - iOS build 6: `build/NetBridge-build6.xcarchive` (verified CFBundleVersion = 6)
+  - macOS build 2: `build/NetBridgeMac-build2.xcarchive` (verified CFBundleVersion = 2)
+  - tvOS build 1: `build/NetBridgeTV-build1.xcarchive` (verified CFBundleVersion = 1)
+- **Unsigned IPA rebuilt:** `scripts/build-ipa.sh` with timestamp 20261004.092059, 26M.
+- **Not uploaded:** none of the archives were uploaded to App Store Connect per the plan; owner will upload from Organizer.
+- **Next:** update build numbers in project files only after a TestFlight/App Store upload completes.
