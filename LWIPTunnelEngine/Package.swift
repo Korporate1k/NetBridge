@@ -3,14 +3,14 @@ import PackageDescription
 
 let package = Package(
     name: "LWIPTunnelEngine",
-    platforms: [.iOS(.v15), .macOS(.v14)],
+    platforms: [.iOS(.v15), .macOS(.v14), .tvOS(.v17)],
     products: [
         .library(name: "LWIPTunnelEngine", targets: ["LWIPTunnelEngine"])
     ],
     targets: [
         // tun2proxy (Rust, ipstack-based tun2socks) as a static-library
-        // xcframework, ios-arm64 + ios-arm64-simulator + macos-arm64 slices, all
-        // three built by scripts/build-tun2proxy-apple.sh (since 2026-09-26; patches
+        // xcframework, ios-arm64 + ios-arm64-simulator + macos-arm64 + tvos-arm64 +
+        // tvos-arm64-simulator slices, all five built by scripts/build-tun2proxy-apple.sh (since 2026-09-26; patches
         // 0001-0007b on every slice, except 0006b's 64 KB TCP window, macOS only
         // because of the iOS extension memory limit). Built from
         // github.com/tun2proxy/tun2proxy @ fc77ca3 (0.8.3) plus three local patches

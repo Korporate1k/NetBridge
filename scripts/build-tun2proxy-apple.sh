@@ -1,15 +1,16 @@
 #!/bin/bash
-# Builds all three slices of LWIPTunnelEngine/tun2proxy.xcframework (ios-arm64, ios-arm64-simulator, macos-arm64)
+# Builds all five slices of LWIPTunnelEngine/tun2proxy.xcframework (ios-arm64, ios-arm64-simulator, macos-arm64,
+# tvos-arm64, tvos-arm64-simulator)
 # from source: tun2proxy @ fc77ca3 plus the local patches in LWIPTunnelEngine/patches, applied in the same order as
 # NetBridgeWindows/patch-deps.sh. Supersedes scripts/build-tun2proxy-macos.sh, which rebuilt only the macOS slice and
 # kept the hand-built iOS slices (0001-0003 only) byte-identical; that policy has ended.
 #
-#   tun2proxy root:          0001, 0003, 0005, 0006a, 0007b (every slice)
+#   tun2proxy root:          0001, 0003, 0005, 0006a, 0007b, 0008b (every slice)
 #                            0006b (64 KB TCP window)            (macOS slice only)
-#   vendored ipstack 1.0.1:  0002, 0004, 0007a                   (every slice)
+#   vendored ipstack 1.0.1:  0002, 0004, 0007a, 0008a            (every slice; 0008 = tvOS cfg gates)
 #
-# 0006b stays off iOS: ~128 KB of window per TCP session does not fit a network extension's memory limit, and the
-# iOS bridge is a 1 MB socketpair. So there are two work trees: "ios" (without 0006b) builds both iOS slices,
+# 0006b stays off iOS and tvOS: ~128 KB of window per TCP session does not fit a network extension's memory limit, and the
+# iOS bridge is a 1 MB socketpair. So there are two work trees: "ios" (without 0006b) builds both iOS and both tvOS slices,
 # "macos" (with 0006b) builds the macOS slice.
 #
 #   scripts/build-tun2proxy-apple.sh            -> stages build/tun2proxy-apple/tun2proxy.xcframework only
@@ -32,48 +33,22 @@ REV=fc77ca3
 IPSTACK_VERSION=1.0.1
 
 INSTALL=0
-[ "${1:-}" = "--install" ] && INSTALL=1
+case "${1:-}" in
+    "") ;;
+    --install) INSTALL=1 ;;
+    *) echo "unknown argument: $1 (only --install is accepted)" >&2; exit 2 ;;
+esac
 
 # Same floors as LWIPTunnelEngine/Package.swift (iOS 15, macOS 14). Without these the objects are stamped with the
 # SDK version and Xcode warns "built for newer iOS/macOS version" on every link.
 export IPHONEOS_DEPLOYMENT_TARGET=15.0
 export MACOSX_DEPLOYMENT_TARGET=14.0
+export TVOS_DEPLOYMENT_TARGET=17.0   # NEPacketTunnelProvider is tvOS 17+
 
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin >/dev/null
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin aarch64-apple-tvos aarch64-apple-tvos-sim >/dev/null
 
-# prepare_tree <dir> <with_0006b: 0|1>: clone, patch and vendor one tun2proxy tree at <dir>/src.
-prepare_tree() {
-    local dir="$1" with_0006b="$2"
-    rm -rf "$dir"
-    mkdir -p "$dir"
-    git clone -q https://github.com/tun2proxy/tun2proxy "$dir/src"
-    (
-        cd "$dir/src"
-        git checkout -q "$REV"
-
-        # tun2proxy itself.
-        git apply "$PATCHES/0001-udp-no-connect-eisconn.patch"             # UDP relays: no EISCONN on Darwin
-        git apply "$PATCHES/0003-virtual-dns-long-mapping-timeout.patch"   # virtual-DNS mappings live 24 h
-        patch -s -p1 < "$PATCHES/0005-virtual-dns-nodata-for-non-a.patch"  # NODATA for AAAA and other non-A queries
-        patch -s -p1 < "$PATCHES/0006a-engine-latency.patch"               # TCP_NODELAY, 5 s DNS sessions, 300 s TTL
-        if [ "$with_0006b" = 1 ]; then
-            patch -s -p1 < "$PATCHES/0006b-tcp-window-64k.patch"           # 64 KB TCP window (macOS only)
-        fi
-        patch -s -p1 < "$PATCHES/0007b-traffic-status-fastpath.patch"      # lock-free traffic_status_update
-
-        # The ipstack patches, so vendor the crate and redirect the dependency.
-        cp "$PATCHES/tun2proxy-Cargo.lock" Cargo.lock
-        # No --locked: the saved lock records ipstack as a path dependency, so cargo
-        # rewrites that one entry here. Every other version stays pinned by the lock.
-        cargo fetch >/dev/null
-        mkdir -p vendor
-        cp -R "$(ls -d "$HOME"/.cargo/registry/src/*/ipstack-$IPSTACK_VERSION | head -1)" vendor/ipstack
-        (cd vendor/ipstack && patch -s -p1 < "$PATCHES/0002-ipstack-upload-backpressure.patch")  # upload backpressure
-        (cd vendor/ipstack && patch -s -p1 < "$PATCHES/0004-ipstack-nonfatal-device-io.patch")   # failed device I/O not fatal
-        (cd vendor/ipstack && patch -s -p1 < "$PATCHES/0007a-ipstack-lazy-trace.patch")          # no eager per-packet log strings
-        printf '\n[patch.crates-io]\nipstack = { path = "vendor/ipstack" }\n' >> Cargo.toml
-    )
-}
+# prepare_tree <dir> <with_0006b: 0|1> lives in lib/tun2proxy-tree.sh (shared with the OpenWrt build).
+source "$ROOT/scripts/lib/tun2proxy-tree.sh"
 
 # Only the work trees and the staged output are rebuilt; earlier xcframework-backup-* directories are kept.
 mkdir -p "$OUT"
@@ -83,7 +58,9 @@ prepare_tree "$OUT/ios" 0
 prepare_tree "$OUT/macos" 1
 
 (cd "$OUT/ios/src" && cargo build --release --target aarch64-apple-ios --lib \
-                   && cargo build --release --target aarch64-apple-ios-sim --lib)
+                   && cargo build --release --target aarch64-apple-ios-sim --lib \
+                   && cargo build --release --target aarch64-apple-tvos --lib \
+                   && cargo build --release --target aarch64-apple-tvos-sim --lib)
 (cd "$OUT/macos/src" && cargo build --release --target aarch64-apple-darwin --lib)
 
 # The C API must not have moved: compare cbindgen's header for the patched source with the checked-in one.
@@ -97,16 +74,20 @@ fi
 # One directory per slice so every library keeps the name libtun2proxy.a
 # (xcframework slices are named after the file passed in).
 STAGE="$OUT/stage"
-mkdir -p "$STAGE/ios-arm64" "$STAGE/ios-arm64-simulator" "$STAGE/macos-arm64"
+mkdir -p "$STAGE/ios-arm64" "$STAGE/ios-arm64-simulator" "$STAGE/macos-arm64" "$STAGE/tvos-arm64" "$STAGE/tvos-arm64-simulator"
 cp "$OUT/ios/src/target/aarch64-apple-ios/release/libtun2proxy.a" "$STAGE/ios-arm64/"
 cp "$OUT/ios/src/target/aarch64-apple-ios-sim/release/libtun2proxy.a" "$STAGE/ios-arm64-simulator/"
 cp "$OUT/macos/src/target/aarch64-apple-darwin/release/libtun2proxy.a" "$STAGE/macos-arm64/"
+cp "$OUT/ios/src/target/aarch64-apple-tvos/release/libtun2proxy.a" "$STAGE/tvos-arm64/"
+cp "$OUT/ios/src/target/aarch64-apple-tvos-sim/release/libtun2proxy.a" "$STAGE/tvos-arm64-simulator/"
 cp -R "$XCF/ios-arm64/Headers" "$STAGE/Headers"
 
 xcodebuild -create-xcframework \
     -library "$STAGE/ios-arm64/libtun2proxy.a" -headers "$STAGE/Headers" \
     -library "$STAGE/ios-arm64-simulator/libtun2proxy.a" -headers "$STAGE/Headers" \
     -library "$STAGE/macos-arm64/libtun2proxy.a" -headers "$STAGE/Headers" \
+    -library "$STAGE/tvos-arm64/libtun2proxy.a" -headers "$STAGE/Headers" \
+    -library "$STAGE/tvos-arm64-simulator/libtun2proxy.a" -headers "$STAGE/Headers" \
     -output "$OUT/tun2proxy.xcframework" >/dev/null
 
 echo "Staged $OUT/tun2proxy.xcframework:"

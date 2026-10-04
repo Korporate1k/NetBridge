@@ -1,0 +1,33 @@
+--- a/Cargo.toml	2026-10-04 06:52:56
++++ b/Cargo.toml	2026-10-04 06:52:56
+@@ -49,6 +49,8 @@
+ ] }
+ thiserror = "2.0.20"
+ tokio = { version = "1.53.1", features = ["full"] }
++# 32-bit MIPS has no 64-bit atomics: portable-atomic is native where they exist, lock-based where not (NetBridge 0009)
++portable-atomic = { version = "1", features = ["fallback"] }
+ tokio-util = "0.7.19"
+ tproxy-config = { version = "^7.0.7", default-features = false }
+ tun = { version = "0.8.14", features = ["async"] }
+--- a/src/session_info.rs
++++ b/src/session_info.rs
+@@ -37,7 +37,7 @@
+     }
+ }
+ 
+-static SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++static SESSION_ID: portable_atomic::AtomicU64 = portable_atomic::AtomicU64::new(0);
+ 
+ impl SessionInfo {
+     pub fn new(src: SocketAddr, dst: SocketAddr, protocol: IpProtocol) -> Self {
+--- a/src/traffic_status.rs	2026-10-04 06:52:56
++++ b/src/traffic_status.rs	2026-10-04 06:52:56
+@@ -44,7 +44,7 @@
+ unsafe impl Sync for TrafficStatusCallback {}
+ 
+ static TRAFFIC_STATUS_CALLBACK: std::sync::Mutex<Option<TrafficStatusCallback>> = std::sync::Mutex::new(None);
+-static SEND_INTERVAL_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
++static SEND_INTERVAL_SECS: portable_atomic::AtomicU64 = portable_atomic::AtomicU64::new(1);
+ // Local patch 0007b: set once a callback has been registered (it is never cleared, as the slot never goes back to
+ // None). Lets traffic_status_update, which runs for every relayed chunk, skip the mutex when nobody is listening.
+ static CALLBACK_SET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

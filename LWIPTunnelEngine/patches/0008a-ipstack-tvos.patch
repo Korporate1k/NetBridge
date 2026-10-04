@@ -1,0 +1,14 @@
+--- a/src/lib.rs	2026-10-04 03:29:49
++++ b/src/lib.rs	2026-10-04 03:29:49
+@@ -37,9 +37,9 @@
+ #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "espidf"))]
+ const TUN_PROTO_IP4: [u8; 2] = [0x08, 0x00];
+ 
+-#[cfg(any(target_os = "macos", target_os = "ios"))]
++#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+ const TUN_PROTO_IP6: [u8; 2] = [0x00, 0x0A];
+-#[cfg(any(target_os = "macos", target_os = "ios"))]
++#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+ const TUN_PROTO_IP4: [u8; 2] = [0x00, 0x02];
+ 
+ /// Minimum MTU required for IPv6 (per RFC 8200 §5: MTU ≥ 1280).

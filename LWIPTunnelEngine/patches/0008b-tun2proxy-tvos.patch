@@ -1,0 +1,11 @@
+--- a/src/general_api.rs	2026-10-04 03:29:49
++++ b/src/general_api.rs	2026-10-04 03:29:49
+@@ -131,7 +131,7 @@
+         cfg.device_guid(12324323423423434234_u128);
+     });
+ 
+-    #[cfg(any(target_os = "ios", target_os = "macos"))]
++    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
+     tun_config.platform_config(|cfg| {
+         cfg.packet_information(_packet_information);
+     });
