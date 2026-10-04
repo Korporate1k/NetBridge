@@ -1,0 +1,16 @@
+# NetBridge router client: send everything on this router's LAN through a NetBridge proxy running on an iPhone.
+# Fill in server_host (the phone's IPv4 address as seen from this router, e.g. the USB-tether gateway) and the
+# credentials set in the NetBridge app, then set enabled to 1 and run:  /etc/init.d/netbridge restart
+config netbridge 'main'
+	option enabled '0'
+	option server_host ''
+	option server_port '8081'
+	option username ''
+	option password ''
+	# What to do when the proxy stops answering:
+	#   block     LAN traffic is blocked until it answers again (nothing is ever sent around the proxy)
+	#   fallback  LAN traffic goes out the plain WAN link until it answers again (NOT through the proxy)
+	option policy 'block'
+	option tun 'nbtun'
+	option probe_interval '10'
+	option probe_failures '3'

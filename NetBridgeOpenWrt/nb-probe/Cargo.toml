@@ -1,0 +1,14 @@
+[package]
+name = "nb-probe"
+version = "0.1.0"
+edition = "2021"
+description = "SOCKS5 health probe for the NetBridge OpenWrt router client (std only)"
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

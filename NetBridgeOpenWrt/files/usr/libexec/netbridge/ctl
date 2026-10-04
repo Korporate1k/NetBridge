@@ -1,0 +1,212 @@
+#!/bin/sh
+# NetBridge router client: routing, failure policy and watchdog. POSIX sh (busybox ash). Configuration comes from the
+# environment (the init scripts export it from /etc/config/netbridge; the test rig sets it directly):
+#   NB_SERVER    IPv4 address of the iPhone proxy (required)        NB_PORT      proxy port (8081)
+#   NB_USER / NB_PASS   proxy credentials (optional)                NB_TUN       tun device made by tun2proxy (nbtun)
+#   NB_POLICY    block | fallback  (block)                          NB_INTERVAL  seconds between probes (10)
+#   NB_FAILS     consecutive failed probes before "down" (3)        NB_PROBE     path of nb-probe (/usr/bin/nb-probe)
+#   NB_STATE     state dir (/var/run/netbridge)
+#   NB_DNS_FLUSH command that empties the router's DNS cache (killall -HUP dnsmasq)
+#
+#   ctl guard-up     install the guard routes (below) right now; the init script runs this BEFORE anything else starts
+#   ctl watch        pin the proxy, install the tun routes, then probe forever and apply the policy (what procd runs).
+#                    On SIGTERM it removes the tun routes and the pin but deliberately LEAVES the guard, so a restart
+#                    (stop + start) or a crashed engine never opens a window where traffic goes around the proxy. Only
+#                    when the init script marked a real stop ($NB_STATE/stopping) does it remove the guard as well.
+#   ctl routes-down  remove everything, guard included (a real stop / disable)
+#   ctl status       print the status file
+#
+# Routing design (IPv4 routes only; the router's own default route is never touched):
+#   guard        IPv6 "unreachable" ::/1 + 8000::/1 (the engine carries IPv4 only, so IPv6 must not bypass it; unreachable
+#                rather than blackhole so LAN devices get an immediate error and fall back to IPv4 at once), and with
+#                policy "block" also blackhole 0.0.0.0/1 + 128.0.0.0/1 metric 1000: whenever the tun routes are absent
+#                (engine starting, restarting or dead) these still beat the WAN default, so nothing leaks around the proxy.
+#                Policy "fallback" has no IPv4 guard: while the proxy is down, traffic goes out the plain WAN link.
+#   <server>/32  pinned to the interface that reaches the phone, so the engine's own connection never loops into the tun,
+#                plus "unreachable <server>/32 metric 2000" underneath it: if the pin vanishes (the WAN link flaps and
+#                the kernel drops it), traffic to the proxy fails fast instead of falling into 0/1 dev tun. Without it
+#                every engine connection to the proxy would enter the engine again, recursively, filling its session
+#                table so that LAN traffic kept failing for minutes after the pin came back.
+#   0.0.0.0/1, 128.0.0.0/1 dev $NB_TUN metric 5   all LAN traffic goes into the engine (more specific than any default)
+#
+# Stale virtual DNS: the engine answers DNS with virtual addresses (198.18.0.0/15) that only it can map back to names,
+# and it forgets them when it restarts. So: dnsmasq caps the TTL it hands out (init script), the engine wrapper alternates
+# its pool half on every start (no stale address can collide with a new one), the DNS cache is flushed whenever the
+# engine restarts or the routing changes, and while "fallback" sends traffic out the WAN the whole virtual range is made
+# unreachable, so a stale address fails at once (and the device re-resolves) instead of timing out.
+NB_PORT=${NB_PORT:-8081}; NB_TUN=${NB_TUN:-nbtun}; NB_POLICY=${NB_POLICY:-block}
+NB_INTERVAL=${NB_INTERVAL:-10}; NB_FAILS=${NB_FAILS:-3}
+NB_PROBE=${NB_PROBE:-/usr/bin/nb-probe}; NB_STATE=${NB_STATE:-/var/run/netbridge}
+STATUS="$NB_STATE/status"
+NB_DNS_FLUSH=${NB_DNS_FLUSH:-killall -HUP dnsmasq}
+VPOOL=198.18.0.0/15
+case "$NB_POLICY" in block|fallback) ;; *) NB_POLICY=block ;; esac
+case "$NB_INTERVAL" in ''|*[!0-9]*|0) NB_INTERVAL=10 ;; esac   # a bad value must not turn the loop into a busy-loop
+case "$NB_FAILS" in ''|*[!0-9]*|0) NB_FAILS=3 ;; esac
+
+say() { echo "$(date '+%F %T') $*" >> "$NB_STATE/log" 2>/dev/null; logger -t netbridge "$*" 2>/dev/null; true; }
+valid_ip4() {
+    case "$1" in ""|*[!0-9.]*|*..*|.*|*.) return 1 ;; esac
+    _ifs=$IFS; IFS=.; set -- $1; IFS=$_ifs
+    [ $# -eq 4 ] || return 1
+    for _o; do [ "$_o" -le 255 ] 2>/dev/null || return 1; done
+}
+tun_exists() { ip link show "$NB_TUN" >/dev/null 2>&1; }
+tun_id() { cat "/sys/class/net/$NB_TUN/ifindex" 2>/dev/null; }   # changes whenever the engine recreates the device
+dns_flush() { eval "$NB_DNS_FLUSH" >/dev/null 2>&1; true; }
+tun_routes_present() { ip route show | grep -q "^0\.0\.0\.0/1 dev $NB_TUN"; }
+
+tun_routes_add() {
+    tun_exists || return 1
+    # tun2proxy creates the device but does not bring it up; routes into a down device are refused
+    ip link set "$NB_TUN" up 2>/dev/null
+    ip route replace 0.0.0.0/1 dev "$NB_TUN" metric 5 && ip route replace 128.0.0.0/1 dev "$NB_TUN" metric 5
+}
+tun_routes_del() {
+    ip route del 0.0.0.0/1 dev "$NB_TUN" metric 5 2>/dev/null
+    ip route del 128.0.0.0/1 dev "$NB_TUN" metric 5 2>/dev/null
+    true
+}
+guard_up() {
+    ip -6 route replace unreachable ::/1 metric 1000 2>/dev/null
+    ip -6 route replace unreachable 8000::/1 metric 1000 2>/dev/null
+    if [ "$NB_POLICY" = block ]; then
+        ip route replace blackhole 0.0.0.0/1 metric 1000 && ip route replace blackhole 128.0.0.0/1 metric 1000
+    else
+        ip route del blackhole 0.0.0.0/1 metric 1000 2>/dev/null
+        ip route del blackhole 128.0.0.0/1 metric 1000 2>/dev/null
+        true
+    fi
+}
+guard_down() {
+    ip route del blackhole 0.0.0.0/1 metric 1000 2>/dev/null
+    ip route del blackhole 128.0.0.0/1 metric 1000 2>/dev/null
+    ip -6 route del unreachable ::/1 metric 1000 2>/dev/null
+    ip -6 route del unreachable 8000::/1 metric 1000 2>/dev/null
+    true
+}
+
+# Where does the proxy live? `ip route get` is precise, but (a) OpenWrt's default busybox `ip` has no such subcommand,
+# and (b) once our 0/1 + 128/1 routes exist, a proxy that is NOT on a connected subnet resolves to our own tun. In both
+# cases use the default route instead: that is exactly right when the phone is the WAN gateway (USB tether: gateway ==
+# proxy, on-link), and right for any proxy reached through the default route. An on-link proxy (connected subnet) always
+# resolves through `route get`, because the connected route is more specific than /1. NB_NO_ROUTE_GET=1 forces the
+# default-route path, for tests. Sets $dev, $via and $pin_src (get | default).
+parse_route() {
+    dev=$(echo "$1" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+    via=$(echo "$1" | sed -n 's/.* via \([^ ]*\).*/\1/p')
+    [ "$via" = "$NB_SERVER" ] && via=""     # the gateway IS the proxy: on-link
+    true
+}
+route_info() {
+    _info=""
+    [ "${NB_NO_ROUTE_GET:-0}" = 1 ] || _info=$(ip route get "$NB_SERVER" 2>/dev/null | head -n 1)
+    parse_route "$_info"; pin_src=get
+    if [ -z "$dev" ] || [ "$dev" = "$NB_TUN" ]; then
+        parse_route "$(ip route show default 2>/dev/null | grep -v "dev $NB_TUN" | head -n 1)"; pin_src=default
+    fi
+}
+pin_server() {
+    ip route replace unreachable "$NB_SERVER/32" metric 2000 2>/dev/null   # the proxy must never be routed into the tun
+    route_info
+    [ -n "$dev" ] && [ "$dev" != "$NB_TUN" ] || { pin_src=none; say "no route to the proxy $NB_SERVER (is the phone connected?)"; return 1; }
+    ip route replace "$NB_SERVER/32" ${via:+via $via} dev "$dev"
+}
+unpin() {
+    [ -n "$NB_SERVER" ] || return 0
+    ip route del unreachable "$NB_SERVER/32" metric 2000 2>/dev/null
+    for _i in 1 2 3 4 5; do ip route del "$NB_SERVER/32" 2>/dev/null || break; done
+    true
+}
+
+routes_down() { tun_routes_del; unpin; guard_down; ip route del unreachable "$VPOOL" 2>/dev/null; true; }
+
+write_status() {
+    cat > "$STATUS.tmp" <<EOT
+state=$state
+udp=$udp
+policy=$NB_POLICY
+server=$NB_SERVER:$NB_PORT
+since=$since
+updated=$(date +%s)
+tun=$(tun_exists && echo up || echo missing)
+pin_src=$pin_src
+detail=$detail
+EOT
+    mv "$STATUS.tmp" "$STATUS"
+}
+
+# Keep the routes consistent with the state, every loop (the tun can come and go when procd restarts the engine).
+reconcile() {
+    pin_server >/dev/null 2>&1
+    guard_up
+    _id=$(tun_id)
+    if [ -n "$_id" ] && [ "$_id" != "$tun_seen" ]; then
+        [ -n "$tun_seen" ] && say "engine restarted: DNS cache flushed (its old virtual addresses are void)"
+        tun_seen=$_id
+        dns_flush
+    fi
+    tun_exists || return 0
+    case "$NB_POLICY:$state" in
+        block:*|fallback:healthy|fallback:checking)
+            ip route del unreachable "$VPOOL" 2>/dev/null
+            if ! tun_routes_present && tun_routes_add && [ "$NB_POLICY" = fallback ]; then
+                say "fallback: proxy back, traffic through the tunnel again; DNS cache flushed"
+                dns_flush
+            fi ;;
+        *)
+            if tun_routes_present; then
+                tun_routes_del
+                ip route replace unreachable "$VPOOL" 2>/dev/null
+                say "fallback: proxy down, traffic goes out the WAN; virtual addresses unreachable, DNS cache flushed"
+                dns_flush
+            fi ;;
+    esac
+    true
+}
+
+watch() {
+    valid_ip4 "$NB_SERVER" || { echo "NB_SERVER must be an IPv4 address, got '$NB_SERVER'" >&2; exit 1; }
+    mkdir -p "$NB_STATE"
+    state=checking; udp=unknown; detail="starting"; since=$(date +%s); fails=0; pin_src=none; tun_seen=""
+    rm -f "$NB_STATE/stopping"
+    # a restart leaves the guard in place (see the header); a real stop, marked by the init script, removes everything
+    trap 'if [ -e "$NB_STATE/stopping" ]; then routes_down; else tun_routes_del; unpin; fi; say "stopped"; exit 0' TERM INT
+    say "start: proxy $NB_SERVER:$NB_PORT tun=$NB_TUN policy=$NB_POLICY"
+    guard_up
+    pin_server
+    tun_routes_add 2>/dev/null
+    write_status
+    while :; do
+        # the probe runs in the background so a SIGTERM is handled at once instead of after the probe's 5 s timeout
+        "$NB_PROBE" "$NB_SERVER" "$NB_PORT" --timeout 5 > "$NB_STATE/probe.out" 2>&1 &
+        wait $!; rc=$?
+        out=$(cat "$NB_STATE/probe.out" 2>/dev/null)
+        udp=$(echo "$out" | sed -n 's/.*udp=\([a-z]*\).*/\1/p'); [ -n "$udp" ] || udp=unknown
+        detail=$(echo "$out" | sed -n 's/.*detail="\(.*\)".*/\1/p')
+        case $rc in
+            0|3) fails=0; new=healthy ;;
+            2)   fails=$((fails + 1)); if [ $fails -ge "$NB_FAILS" ]; then new=auth_rejected; else new=$state; fi ;;
+            *)   fails=$((fails + 1)); if [ $fails -ge "$NB_FAILS" ]; then new=down; else new=$state; fi ;;
+        esac
+        if [ "$new" != "$state" ]; then
+            say "state $state -> $new ($detail)"
+            state=$new; since=$(date +%s)
+        fi
+        reconcile
+        write_status
+        if [ "$(wc -c < "$NB_STATE/log" 2>/dev/null || echo 0)" -gt 100000 ]; then
+            tail -n 200 "$NB_STATE/log" > "$NB_STATE/log.tmp" && mv "$NB_STATE/log.tmp" "$NB_STATE/log"
+        fi
+        sleep "$NB_INTERVAL" &
+        wait $!
+    done
+}
+
+case "${1:-}" in
+    watch) watch ;;
+    guard-up) guard_up ;;
+    routes-down) routes_down ;;
+    status) cat "$STATUS" 2>/dev/null || echo "state=stopped" ;;
+    *) echo "usage: $0 watch|guard-up|routes-down|status" >&2; exit 2 ;;
+esac

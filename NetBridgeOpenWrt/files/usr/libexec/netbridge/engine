@@ -1,0 +1,12 @@
+#!/bin/sh
+# Starts the tun2proxy engine with a virtual-DNS pool that alternates on every start: 198.18.0.0/16, then 198.19.0.0/16,
+# then 198.18.0.0/16 again. The engine hands out virtual addresses in order from the start of its pool and forgets them
+# when it restarts, so with a fixed pool a device still holding an address from the previous run could be sent to
+# whatever new hostname got that same address. With the other half in use, a stale address simply fails (and the device
+# re-resolves; dnsmasq caps answers at 30 s and its cache is flushed on every engine start).
+#   NB_STATE  state dir (/var/run/netbridge)      NB_ENGINE  engine binary (/usr/bin/tun2proxy-bin)
+STATE=${NB_STATE:-/var/run/netbridge}
+mkdir -p "$STATE"
+if [ "$(cat "$STATE/pool" 2>/dev/null)" = 198.18.0.0/16 ]; then pool=198.19.0.0/16; else pool=198.18.0.0/16; fi
+echo "$pool" > "$STATE/pool"
+exec "${NB_ENGINE:-/usr/bin/tun2proxy-bin}" --virtual-dns-pool "$pool" "$@"

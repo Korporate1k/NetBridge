@@ -11,11 +11,16 @@ import socket
 import struct
 import time
 
+HOST_MAP = {}  # --host-map NAME=IP: names the server resolves itself (no DNS needed for lab/offline tests)
 STATS = {"tcp": 0, "udp_assoc": 0, "udp_out": 0, "udp_in": 0, "auth_fail": 0}
 
 
 def log(msg):
     print(time.strftime("%H:%M:%S"), msg, flush=True)
+
+
+def mapped(host):
+    return HOST_MAP.get(host.lower(), host)
 
 
 def parse_addr(data, i):
@@ -58,10 +63,10 @@ class UdpRelay(asyncio.DatagramProtocol):
                 family = self.transport.get_extra_info("socket").family
                 if family == socket.AF_INET6:
                     # Dual-stack relay socket: IPv4 destinations are sent as IPv4-mapped IPv6 addresses.
-                    dst = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_DGRAM, 0,
+                    dst = socket.getaddrinfo(mapped(host), port, socket.AF_INET6, socket.SOCK_DGRAM, 0,
                                              socket.AI_V4MAPPED | socket.AI_ALL)[0][4]
                 else:
-                    dst = socket.getaddrinfo(host, port, type=socket.SOCK_DGRAM)[0][4][:2]
+                    dst = socket.getaddrinfo(mapped(host), port, type=socket.SOCK_DGRAM)[0][4][:2]
             except Exception as e:  # noqa: BLE001
                 log(f"{self.tag} UDP bad datagram: {e}")
                 return
@@ -115,7 +120,7 @@ async def handle(reader, writer, creds):
             STATS["tcp"] += 1
             log(f"{tag} CONNECT {host}:{port}")
             try:
-                r2, w2 = await asyncio.wait_for(asyncio.open_connection(host, port), 10)
+                r2, w2 = await asyncio.wait_for(asyncio.open_connection(mapped(host), port), 10)
             except Exception as e:  # noqa: BLE001
                 log(f"{tag} CONNECT {host}:{port} failed: {e}")
                 writer.write(b"\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00")
@@ -167,8 +172,15 @@ async def main():
     ap.add_argument("--bind", default="0.0.0.0", help="listen address, e.g. :: for IPv6")
     ap.add_argument("--user")
     ap.add_argument("--password", default="")
+    ap.add_argument("--host-map", action="append", default=[], metavar="NAME=IP",
+                    help="resolve NAME to IP without DNS (repeatable)")
     a = ap.parse_args()
     creds = (a.user, a.password) if a.user else None
+    for m in a.host_map:
+        name, _, ip = m.partition("=")
+        if not name or not ip:
+            ap.error(f"--host-map needs NAME=IP, got {m!r}")
+        HOST_MAP[name.lower()] = ip
     server = await asyncio.start_server(lambda r, w: handle(r, w, creds), a.bind, a.port)
     log(f"SOCKS5 test server on {a.bind}:{a.port}{' (auth required)' if creds else ''}")
     asyncio.create_task(report())

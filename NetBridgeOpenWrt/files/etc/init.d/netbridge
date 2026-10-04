@@ -1,0 +1,183 @@
+#!/bin/sh /etc/rc.common
+# NetBridge router client (procd). Runs two supervised processes: the tun2proxy engine and the watchdog (ctl watch,
+# which pins the proxy, installs the tun routes and applies the failure policy), and wires DNS and the firewall.
+#
+# No traffic may go around the proxy (policy "block"), so:
+#   - the guard routes (ctl guard-up) are installed synchronously at the top of start_service, before anything else, and
+#     early in boot by /etc/init.d/netbridge-guard (START=11, before dnsmasq and the network come up);
+#   - a restart/reload keeps the guard, DNS and firewall settings in place; only a real stop (or enabled=0) removes them.
+START=99
+STOP=10
+USE_PROCD=1
+
+ENGINE=/usr/bin/tun2proxy-bin
+ENGINE_WRAPPER=/usr/libexec/netbridge/engine   # alternates the virtual-DNS pool half on every (re)start
+CTL=/usr/libexec/netbridge/ctl
+STATE=/var/run/netbridge
+VDNS=8.8.8.8            # tun2proxy's virtual-DNS address: queries sent here land in the tunnel and get virtual answers
+DNS_TTL=30              # cap on the TTL dnsmasq hands out and caches: a virtual answer that goes stale (engine restart,
+                        # fallback switch) is re-resolved within 30 s even by a device that ignores our cache flushes
+
+# Percent-encode the characters that are special in a proxy URL's user:password part.
+urlenc() {
+	printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/ /%20/g' -e 's/@/%40/g' -e 's/:/%3A/g' -e 's#/#%2F#g' \
+		-e 's/?/%3F/g' -e 's/#/%23/g' -e 's/\[/%5B/g' -e 's/\]/%5D/g' -e 's/\\/%5C/g'
+}
+
+# Older dnsmasq init scripts (OpenWrt 18.06, e.g. GL.iNet GL-SFT1200 firmware) have no max_ttl / max_cache_ttl UCI
+# options. There the caps go into a file in dnsmasq's conf-dir instead: rewritten on every start (the conf-dir is in
+# /tmp, gone after a reboot) and removed on stop.
+ttl_in_uci() { grep -q '"max_ttl"' /etc/init.d/dnsmasq 2>/dev/null; }
+ttl_file() { echo "$(uci -q get 'dhcp.@dnsmasq[0].confdir' || echo /tmp/dnsmasq.d)/netbridge-ttl.conf" | sed 's/,.*//'; }
+ttl_file_up() {
+	local f want
+	ttl_in_uci && return 0
+	f="$(ttl_file)"; want="max-ttl=$DNS_TTL
+max-cache-ttl=$DNS_TTL"
+	[ "$(cat "$f" 2>/dev/null)" = "$want" ] && return 0
+	mkdir -p "$(dirname "$f")"
+	printf '%s\n' "$want" > "$f"
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+ttl_file_down() {
+	local f; f="$(ttl_file)"
+	[ -e "$f" ] || return 0
+	rm -f "$f"
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+
+# DNS: the virtual-DNS address becomes dnsmasq's ONLY upstream (any other server would answer around the tunnel), and
+# TTLs are capped at $DNS_TTL. The user's own noresolv, server list, max_ttl and max_cache_ttl are saved in our config
+# first (committed before dhcp is touched) and restored on stop.
+dns_up() {
+	local d='dhcp.@dnsmasq[0]' s
+	uci -q get "$d" >/dev/null || return 0
+	[ "$(uci -q get netbridge.main.dns_applied)" = 1 ] && return 0
+	uci -q delete netbridge.main.saved_server
+	for s in $(uci -q get "$d.server"); do uci add_list netbridge.main.saved_server="$s"; done
+	uci -q set netbridge.main.saved_noresolv="$(uci -q get "$d.noresolv")"
+	uci -q set netbridge.main.saved_max_ttl="$(uci -q get "$d.max_ttl")"
+	uci -q set netbridge.main.saved_max_cache_ttl="$(uci -q get "$d.max_cache_ttl")"
+	uci -q set netbridge.main.dns_applied=1
+	uci commit netbridge
+	uci -q delete "$d.server"
+	uci add_list "$d.server=$VDNS"
+	uci -q set "$d.noresolv=1"
+	if ttl_in_uci; then
+		uci -q set "$d.max_ttl=$DNS_TTL"
+		uci -q set "$d.max_cache_ttl=$DNS_TTL"
+	fi
+	uci commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+dns_down() {
+	local d='dhcp.@dnsmasq[0]' s saved o
+	[ "$(uci -q get netbridge.main.dns_applied)" = 1 ] || return 0
+	uci -q delete "$d.server"
+	for s in $(uci -q get netbridge.main.saved_server); do uci add_list "$d.server=$s"; done
+	for o in noresolv max_ttl max_cache_ttl; do
+		saved="$(uci -q get netbridge.main.saved_$o)"
+		if [ -n "$saved" ]; then uci -q set "$d.$o=$saved"; else uci -q delete "$d.$o"; fi
+		uci -q delete netbridge.main.saved_$o
+	done
+	uci commit dhcp
+	uci -q delete netbridge.main.saved_server
+	uci -q set netbridge.main.dns_applied=0
+	uci commit netbridge
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+
+# LAN -> tun forwarding. Replies need no rule (they match the conntrack entry the forwarded request created).
+firewall_up() {
+	uci -q delete firewall.netbridge_zone; uci -q delete firewall.netbridge_fwd
+	uci set firewall.netbridge_zone=zone
+	uci set firewall.netbridge_zone.name='nbtun'
+	uci add_list firewall.netbridge_zone.device="$1"
+	uci set firewall.netbridge_zone.input='REJECT'
+	uci set firewall.netbridge_zone.output='ACCEPT'
+	uci set firewall.netbridge_zone.forward='REJECT'
+	uci set firewall.netbridge_fwd=forwarding
+	uci set firewall.netbridge_fwd.src='lan'
+	uci set firewall.netbridge_fwd.dest='nbtun'
+	uci commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
+}
+firewall_down() {
+	uci -q get firewall.netbridge_zone >/dev/null || return 0
+	uci -q delete firewall.netbridge_zone; uci -q delete firewall.netbridge_fwd
+	uci commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
+}
+
+# Everything off: DNS and firewall restored, all routes (guard included) removed.
+teardown() {
+	local server tun
+	config_load netbridge
+	config_get server main server_host ''
+	config_get tun main tun nbtun
+	mkdir -p "$STATE"; touch "$STATE/stopping"     # tells a still-running watchdog to remove everything when it exits
+	dns_down
+	ttl_file_down
+	firewall_down
+	NB_SERVER="$server" NB_TUN="$tun" "$CTL" routes-down
+}
+
+start_service() {
+	local enabled server port user pass tun policy interval fails auth
+	config_load netbridge
+	config_get_bool enabled main enabled 0
+	config_get server main server_host ''
+	config_get port main server_port 8081
+	config_get user main username ''
+	config_get pass main password ''
+	config_get tun main tun nbtun
+	config_get policy main policy block
+	config_get interval main probe_interval 10
+	config_get fails main probe_failures 3
+
+	if [ "$enabled" != 1 ]; then
+		logger -t netbridge "disabled (set enabled=1 in /etc/config/netbridge)"
+		teardown     # a previous run (or a reboot while enabled) must not leave DNS rewritten or the LAN blocked
+		return 0
+	fi
+	[ -n "$server" ] || { logger -t netbridge "server_host is not set in /etc/config/netbridge"; return 1; }
+	[ -x "$ENGINE" ] || { logger -t netbridge "$ENGINE is missing"; return 1; }
+
+	# first, before the engine, DNS or anything else: nothing may leave around the proxy from here on
+	mkdir -p "$STATE"; rm -f "$STATE/stopping"
+	NB_POLICY="$policy" "$CTL" guard-up
+
+	auth=""
+	[ -n "$user" ] && auth="$(urlenc "$user"):$(urlenc "$pass")@"
+
+	procd_open_instance engine
+	procd_set_param command "$ENGINE_WRAPPER" --tun "$tun" --proxy "socks5://${auth}${server}:${port}" \
+		--dns virtual --dns-addr "$VDNS" --udp-timeout 120 --tcp-mss 1440 -v warn
+	procd_set_param respawn 3600 3 0
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+
+	procd_open_instance watchdog
+	procd_set_param command "$CTL" watch
+	procd_set_param env NB_SERVER="$server" NB_PORT="$port" NB_USER="$user" NB_PASS="$pass" NB_TUN="$tun" \
+		NB_POLICY="$policy" NB_INTERVAL="$interval" NB_FAILS="$fails"
+	procd_set_param respawn 3600 3 0
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+
+	dns_up
+	ttl_file_up
+	firewall_up "$tun"
+}
+
+stop_service() {
+	# rc.common sets $action; a restart/reload keeps the guard, DNS and firewall so there is no window around the proxy
+	case "$action" in restart|reload) return 0 ;; esac
+	teardown
+}
+
+service_triggers() {
+	procd_add_reload_trigger netbridge
+}

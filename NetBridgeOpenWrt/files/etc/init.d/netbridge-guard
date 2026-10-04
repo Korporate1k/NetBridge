@@ -1,0 +1,10 @@
+#!/bin/sh /etc/rc.common
+# NetBridge boot guard: installs the guard routes (IPv6 blackholes, and IPv4 blackholes with policy "block") early in
+# boot, before dnsmasq and the network start, so nothing on the LAN leaves around the proxy before /etc/init.d/netbridge
+# (START=99) brings the tunnel up. Does nothing unless NetBridge is enabled. Removing the guard is netbridge's job.
+START=11
+
+start() {
+	[ "$(uci -q get netbridge.main.enabled)" = 1 ] || return 0
+	NB_POLICY="$(uci -q get netbridge.main.policy)" /usr/libexec/netbridge/ctl guard-up
+}

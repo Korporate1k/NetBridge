@@ -1,0 +1,33 @@
+#!/bin/sh
+# NetBridge router client: small control command.
+#   netbridge status   state of the proxy as seen by the watchdog, plus the processes and routes
+#   netbridge probe    run one SOCKS5 health probe now, with the configured server and credentials
+#   netbridge log      the watchdog's log
+#   netbridge setup HOST [PORT] [USER] [PASSWORD]   write the config, enable, and (re)start
+uci_get() { uci -q get "netbridge.main.$1"; }
+case "${1:-}" in
+	status)
+		echo "== watchdog"; /usr/libexec/netbridge/ctl status
+		echo "== service";  /etc/init.d/netbridge status 2>&1 | head -3
+		echo "== routes";   ip route | grep -E "nbtun|blackhole|^0\.0\.0\.0/1|^128\.0\.0\.0/1" || echo "(none)"
+		;;
+	probe)
+		NB_USER="$(uci_get username)" NB_PASS="$(uci_get password)" \
+			/usr/bin/nb-probe "$(uci_get server_host)" "$(uci_get server_port)" --timeout 5
+		;;
+	log) cat /var/run/netbridge/log 2>/dev/null || echo "(no log yet)" ;;
+	setup)
+		[ -n "${2:-}" ] || { echo "usage: netbridge setup HOST [PORT] [USER] [PASSWORD]" >&2; exit 2; }
+		uci set netbridge.main.server_host="$2"
+		[ -n "${3:-}" ] && uci set netbridge.main.server_port="$3"
+		[ -n "${4:-}" ] && uci set netbridge.main.username="$4"
+		[ -n "${5:-}" ] && uci set netbridge.main.password="$5"
+		uci set netbridge.main.enabled=1
+		uci commit netbridge
+		/etc/init.d/netbridge enable
+		/etc/init.d/netbridge-guard enable
+		/etc/init.d/netbridge restart
+		sleep 3; "$0" status
+		;;
+	*) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
