@@ -25,10 +25,10 @@ import LWIPTunnelEngine
 ///
 /// Health monitoring (SOCKS5 probe every 20 s and after path changes, network-change cancel, engine-exit cancel)
 /// runs on both iOS and macOS. Only the stats hand-off to the app (`TunnelCounters` / `handleAppMessage`) is
-/// macOS-only, because `TunnelStats` is compiled into the Mac targets only.
+/// macOS- and tvOS-only, because `TunnelStats` is compiled into the Mac and tvOS targets only.
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: TunnelEngine?
-    #if os(macOS)
+    #if os(macOS) || os(tvOS)
     /// Live traffic counters for the Mac app's dashboard (see `handleAppMessage`).
     private let counters = TunnelCounters()
     #endif
@@ -164,7 +164,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         tunnelLog.log("stopTunnel reason=\(String(describing: reason), privacy: .public)")
         memoryTimer?.cancel()
-        #if os(macOS)
+        #if os(macOS) || os(tvOS)
         statsTimer?.cancel()
         #endif
         stopMonitoring()
@@ -193,7 +193,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         cancelTunnelWithError(sessionError(code: code, message))
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(tvOS)
     /// The Mac app polls this once a second while connected; any message body
     /// returns the current `TunnelStats` as JSON.
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
@@ -280,7 +280,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 if self.outboundCount <= 5 {
                     Self.debugLog("outbound #\(self.outboundCount) bytes=\(data.count) first=\(data.prefix(8).map { String(format: "%02x", $0) }.joined())")
                 }
-                #if os(macOS)
+                #if os(macOS) || os(tvOS)
                 self.counters.addDown(data.count)
                 #endif
             }
@@ -297,13 +297,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self?.failSession(code: 2, "The tunnel stopped unexpectedly: \(exit).")
         }
 
-        #if os(macOS)
+        #if os(macOS) || os(tvOS)
         counters.markConnected()
         #endif
         engine.start()
         readPackets()
         startMemoryLogging()
-        #if os(macOS)
+        #if os(macOS) || os(tvOS)
         startStatsLogging()
         #endif
         startMonitoring()
@@ -464,7 +464,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func report(reachable: Bool, udp: Bool?, authRejected: Bool) {
-        #if os(macOS)
+        #if os(macOS) || os(tvOS)
         counters.setProbe(reachable: reachable, udp: udp, authRejected: authRejected)
         #endif
     }
@@ -484,7 +484,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     Self.debugLog("inbound #\(self.inboundCount) bytes=\(packet.count) first=\(packet.prefix(8).map { String(format: "%02x", $0) }.joined())")
                 }
                 let family = protocols.indices.contains(i) ? protocols[i].int32Value : AF_INET
-                #if os(macOS)
+                #if os(macOS) || os(tvOS)
                 self.counters.addUp(packet.count)
                 #endif
                 engine.consumeInboundPacket(packet, family: family)
@@ -582,7 +582,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 }
 
-#if os(macOS)
+#if os(macOS) || os(tvOS)
 /// Thread-safe byte/packet counters. Packets arrive on the packet-flow queue and
 /// leave from the engine's thread, and the app reads a snapshot at any time.
 private final class TunnelCounters {

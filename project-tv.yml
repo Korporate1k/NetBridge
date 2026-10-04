@@ -1,0 +1,113 @@
+# XcodeGen spec for the tvOS client (client only: no proxy listener/relay). Generates NetBridgeTV.xcodeproj, kept
+# separate from the hand-edited iOS NetBridge.xcodeproj so the iOS project is never touched:
+#   xcodegen generate --spec project-tv.yml
+# Same pattern as project-mac.yml. Bundle IDs match the iOS/macOS apps (ClientTunnelManager hard-codes the
+# extension's ID, and a shared ID is what universal purchase needs).
+name: NetBridgeTV
+
+options:
+  bundleIdPrefix: com.Korporate1k
+  deploymentTarget:
+    tvOS: "17.0"   # NEPacketTunnelProvider is tvOS 17+
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: DS8AMC8BSV
+    CODE_SIGN_STYLE: Automatic
+    # Apple Silicon only: the tun2proxy xcframework's tvOS slices are arm64 (a generic simulator build would also
+    # try x86_64 and fail to link).
+    ARCHS: arm64
+
+packages:
+  LWIPTunnelEngine:
+    path: LWIPTunnelEngine
+
+targets:
+  NetBridgeTV:
+    type: application
+    platform: tvOS
+    sources:
+      - path: NetBridgeTV/Sources
+      - path: NetBridgeTV/Assets.xcassets   # generated: python3 scripts/gen-tvos-icons.py
+      # Shared with the iOS and Mac apps, compiled unchanged (tvOS-specific bits are #if guarded).
+      - path: NetBridge/ClientConfiguration.swift
+      - path: NetBridge/KeychainStore.swift
+      - path: NetBridge/ClientTunnelManager.swift
+      - path: NetBridgeMac/Shared/TunnelStats.swift
+    dependencies:
+      - target: NetBridgeTVTunnel
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: NetBridge
+        PRODUCT_MODULE_NAME: NetBridgeTV
+        PRODUCT_BUNDLE_IDENTIFIER: com.Korporate1k.LocalProxy
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: NetBridgeTV/Info.plist
+      properties:
+        CFBundleDisplayName: NetBridge
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+    entitlements:
+      path: NetBridgeTV/NetBridgeTV.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+        com.apple.security.application-groups:
+          - group.com.Korporate1k.LocalProxy
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.Korporate1k.LocalProxy.shared
+
+  NetBridgeTVTunnel:
+    type: app-extension
+    platform: tvOS
+    sources:
+      - path: NetBridgeTunnel/PacketTunnelProvider.swift
+      - path: NetBridgeMac/Shared/TunnelStats.swift
+    dependencies:
+      - package: LWIPTunnelEngine
+        product: LWIPTunnelEngine
+    settings:
+      base:
+        PRODUCT_NAME: NetBridgeTunnel
+        PRODUCT_MODULE_NAME: NetBridgeTunnel
+        PRODUCT_BUNDLE_IDENTIFIER: com.Korporate1k.LocalProxy.Tunnel
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: NetBridgeTVTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: NetBridge Tunnel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    entitlements:
+      path: NetBridgeTVTunnel/NetBridgeTVTunnel.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+        com.apple.security.application-groups:
+          - group.com.Korporate1k.LocalProxy
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.Korporate1k.LocalProxy.shared
+
+schemes:
+  NetBridgeTV:
+    build:
+      targets:
+        NetBridgeTV: all
+        NetBridgeTVTunnel: all
+    run:
+      config: Debug
+    archive:
+      config: Release

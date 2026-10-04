@@ -5,6 +5,7 @@ let package = Package(
     name: "Socks5Client",
     platforms: [
         .iOS(.v15),
+        .tvOS(.v17),
         // macOS target exists purely so `swift test` runs headlessly here —
         // no simulator/device needed to exercise the loopback mock server.
         .macOS(.v12)

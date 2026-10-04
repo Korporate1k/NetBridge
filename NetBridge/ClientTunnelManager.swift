@@ -40,7 +40,7 @@ final class ClientTunnelManager: ObservableObject {
     private var statusObserver: NSObjectProtocol?
     /// Set by `stop()`, cleared by `start()`: a disconnect the user asked for carries no failure worth showing.
     private var userRequestedStop = false
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     private static let lastShownFailureKey = "client.lastShownFailureID"
     #endif
 
@@ -63,7 +63,7 @@ final class ClientTunnelManager: ObservableObject {
                 DebugLog.important("client", "VPN status -> \(status.rawValue) (\(String(describing: status)))")
                 let previous = self.status
                 self.status = status
-                #if os(iOS)
+                #if os(iOS) || os(tvOS)
                 if status == .disconnected, previous != .disconnected, previous != .invalid, !self.userRequestedStop {
                     self.showProviderFailure()
                 }
@@ -226,7 +226,7 @@ final class ClientTunnelManager: ObservableObject {
         manager?.connection.stopVPNTunnel()
     }
 
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     /// iOS has no auto-reconnect, so when our extension ends a session itself (engine died, lost the path to the
     /// server after a network change, could not start) the least it owes the user is the reason. Only errors our
     /// extension stamped with a session ID are shown, each once: `fetchLastDisconnectError` is documented only as
@@ -258,7 +258,7 @@ final class ClientTunnelManager: ObservableObject {
         manager.connection.fetchLastDisconnectError(completionHandler: completion)
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(tvOS)
     /// When the current tunnel session came up, straight from NetworkExtension.
     var connectedDate: Date? { manager?.connection.connectedDate }
 
