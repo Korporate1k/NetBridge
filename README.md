@@ -4,11 +4,11 @@
 
 | Platform | Get it |
 |---|---|
-| 📱 **iPhone** (start here) | [TestFlight]({{TESTFLIGHT_IPHONE}}) |
+| 📱 **iPhone** (start here) | [TestFlight](https://testflight.apple.com/join/6UBBhPjM) |
 | 📶 **Router** (OpenWrt, GL.iNet) | Installed from the iPhone app, see [Router](#router-openwrt-and-glinet) |
 | 🪟 **Windows** 10/11 | [x64](https://github.com/Korporate1k/NetBridge/releases/latest/download/NetBridge-win-x64.zip) · [ARM64](https://github.com/Korporate1k/NetBridge/releases/latest/download/NetBridge-win-arm64.zip) · [all releases](https://github.com/Korporate1k/NetBridge/releases) |
-| 💻 **Mac** (macOS 14+) | [TestFlight]({{TESTFLIGHT_MAC}}) |
-| 📺 **Apple TV** (tvOS 17+) | [TestFlight]({{TESTFLIGHT_TV}}) |
+| 💻 **Mac** (macOS 14+) | [TestFlight](https://testflight.apple.com/join/6UBBhPjM) |
+| 📺 **Apple TV** (tvOS 17+) | [TestFlight](https://testflight.apple.com/join/6UBBhPjM) |
 | 📱 **iPhone & iPad** (as a device) | Same app as above |
 
 ---
